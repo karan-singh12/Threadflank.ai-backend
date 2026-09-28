@@ -49,8 +49,10 @@ async function bootstrap() {
     decorateReply: false,
   });
 
-  // Set global API prefix
-  app.setGlobalPrefix("api");
+  // Set global API prefix (while excluding root and health checks for orchestrators & uptime monitors)
+  app.setGlobalPrefix("api", {
+    exclude: ["", "health", "health/(.*)", "api/health", "api/health/(.*)"],
+  });
 
   // Swagger/OpenAPI docs — existing controllers already carry @ApiTags/@ApiOperation
   // decorators; this just exposes them (and everything new) at /api/docs.

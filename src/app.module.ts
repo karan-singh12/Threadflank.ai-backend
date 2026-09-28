@@ -6,6 +6,7 @@ import Redis from "ioredis";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { PrismaModule } from "./prisma/prisma.module";
+import { CacheModule } from "./cache/cache.module";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
 import { AdminModule } from "./modules/admin/admin.module";
@@ -101,6 +102,7 @@ import { WidgetModule } from "./modules/widget/widget.module";
 
     // ─── Feature Modules ─────────────────────────────────────────────────────
     PrismaModule,
+    CacheModule,
     AuthModule,
     UsersModule,
     AdminModule,
