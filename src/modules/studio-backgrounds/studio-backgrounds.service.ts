@@ -20,66 +20,73 @@ export class StudioBackgroundsService implements OnModuleInit {
    * Seed curated scene backgrounds for Drape Studio if table is empty.
    */
   async seedDefaultsIfEmpty() {
-    const count = await this.prisma.studioBackground.count();
-    if (count > 0) return;
+    try {
+      const count = await this.prisma.studioBackground.count();
+      if (count > 0) return;
 
-    const defaults = [
-      {
-        name: 'Modern Studio',
-        category: 'Studio',
-        imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1200&q=80',
-        cssGradient: 'radial-gradient(circle at 50% 30%, #2a2548 0%, #0d0c1f 70%)',
-        isDefault: true,
-        order: 1,
-      },
-      {
-        name: 'Sunlit Terrace',
-        category: 'Outdoor',
-        imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80',
-        cssGradient: 'linear-gradient(180deg, #ffb88c 0%, #de6262 55%, #3a1c40 100%)',
-        isDefault: false,
-        order: 2,
-      },
-      {
-        name: 'Parisian Avenue',
-        category: 'Urban',
-        imageUrl: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1200&q=80',
-        cssGradient: 'linear-gradient(180deg, #a3b1c6 0%, #52607a 55%, #1c2230 100%)',
-        isDefault: false,
-        order: 3,
-      },
-      {
-        name: 'Luxury Penthouse',
-        category: 'Luxury',
-        imageUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
-        cssGradient: 'radial-gradient(circle at 50% 20%, #ffd87a 0%, #d2553a 45%, #4a1030 100%)',
-        isDefault: false,
-        order: 4,
-      },
-      {
-        name: 'Botanical Garden',
-        category: 'Nature',
-        imageUrl: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=1200&q=80',
-        cssGradient: 'linear-gradient(180deg, #cfe8c0 0%, #6fa66b 55%, #28452a 100%)',
-        isDefault: false,
-        order: 5,
-      },
-      {
-        name: 'Neon Nightclub',
-        category: 'Party',
-        imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80',
-        cssGradient: 'radial-gradient(circle at 50% 50%, #6645eb 0%, #070614 80%)',
-        isDefault: false,
-        order: 6,
-      },
-    ];
+      const defaults = [
+        {
+          name: 'Modern Studio',
+          category: 'Studio',
+          imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1200&q=80',
+          cssGradient: 'radial-gradient(circle at 50% 30%, #2a2548 0%, #0d0c1f 70%)',
+          isDefault: true,
+          order: 1,
+        },
+        {
+          name: 'Sunlit Terrace',
+          category: 'Outdoor',
+          imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80',
+          cssGradient: 'linear-gradient(180deg, #ffb88c 0%, #de6262 55%, #3a1c40 100%)',
+          isDefault: false,
+          order: 2,
+        },
+        {
+          name: 'Parisian Avenue',
+          category: 'Urban',
+          imageUrl: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1200&q=80',
+          cssGradient: 'linear-gradient(180deg, #a3b1c6 0%, #52607a 55%, #1c2230 100%)',
+          isDefault: false,
+          order: 3,
+        },
+        {
+          name: 'Luxury Penthouse',
+          category: 'Luxury',
+          imageUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+          cssGradient: 'radial-gradient(circle at 50% 20%, #ffd87a 0%, #d2553a 45%, #4a1030 100%)',
+          isDefault: false,
+          order: 4,
+        },
+        {
+          name: 'Botanical Garden',
+          category: 'Nature',
+          imageUrl: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=1200&q=80',
+          cssGradient: 'linear-gradient(180deg, #cfe8c0 0%, #6fa66b 55%, #28452a 100%)',
+          isDefault: false,
+          order: 5,
+        },
+        {
+          name: 'Neon Nightclub',
+          category: 'Party',
+          imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&q=80',
+          cssGradient: 'radial-gradient(circle at 50% 50%, #6645eb 0%, #070614 80%)',
+          isDefault: false,
+          order: 6,
+        },
+      ];
 
-    for (const item of defaults) {
-      await this.prisma.studioBackground.create({
-        data: item,
-      });
+      for (const item of defaults) {
+        await this.prisma.studioBackground.create({
+          data: item,
+        });
+      }
+      console.log('[StudioBackgrounds] Seeded initial character scene backgrounds.');
+    } catch (error: any) {
+      console.warn(
+        '[StudioBackgrounds] Could not seed default scene backgrounds (database tables might not be migrated yet):',
+        error?.message || error,
+      );
     }
-    console.log('[StudioBackgrounds] Seeded initial character scene backgrounds.');
   }
 
   /**
