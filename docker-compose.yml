@@ -1,0 +1,24 @@
+# Local development database.
+#   docker compose up -d     → start Postgres on localhost:5433
+#   docker compose down -v   → stop it and wipe all data
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: outfit-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: outfit
+      POSTGRES_PASSWORD: outfit_dev
+      POSTGRES_DB: outfit_checker
+    ports:
+      - "5433:5432"
+    volumes:
+      - outfit-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outfit -d outfit_checker"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  outfit-pgdata:

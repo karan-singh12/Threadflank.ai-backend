@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <circle cx="60" cy="60" r="60" fill="#1e1713"/>
+  <circle cx="60" cy="60" r="54" fill="none" stroke="#c49f64" stroke-width="1.8"/>
+  <text x="52" y="78" font-family="'Times New Roman', serif" font-weight="900" font-size="42" fill="#c49f64">L</text>
+  <text x="69" y="65" font-family="'Times New Roman', serif" font-weight="900" font-size="38" fill="#c49f64">V</text>
+</svg>
