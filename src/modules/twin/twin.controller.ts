@@ -1,5 +1,5 @@
-import { Controller, Get, Put, Body, UseGuards, Req } from "@nestjs/common";
-import { TwinService, TwinProfileInput } from "./twin.service";
+import { Controller, Get, Put, Post, Body, UseGuards, Req } from "@nestjs/common";
+import { TwinService, TwinProfileInput, GenerateTwinDto } from "./twin.service";
 import { AuthGuard } from "../../common/guards/auth.guard";
 
 @Controller("twin")
@@ -19,5 +19,12 @@ export class TwinController {
     const userId = req.user.userId;
     const profile = await this.twinService.upsert(userId, body);
     return { success: true, data: profile };
+  }
+
+  @Post("generate")
+  async generateTwin(@Req() req: any, @Body() body: GenerateTwinDto) {
+    const userId = req.user.userId;
+    const result = await this.twinService.generateAndPersist(userId, body);
+    return { success: true, data: result };
   }
 }
