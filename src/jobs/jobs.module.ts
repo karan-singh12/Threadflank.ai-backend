@@ -18,6 +18,9 @@ function getRedisConnectionOptions() {
         host: parsed.hostname,
         port: parseInt(parsed.port || "6379", 10),
         maxRetriesPerRequest: null,
+        enableOfflineQueue: false,
+        connectTimeout: 1000,
+        retryStrategy: () => null,
       };
 
       if (parsed.username) {
@@ -49,6 +52,9 @@ function getRedisConnectionOptions() {
     port,
     password,
     maxRetriesPerRequest: null,
+    enableOfflineQueue: false,
+    connectTimeout: 1000,
+    retryStrategy: () => null,
   };
 
   if (useTls) {

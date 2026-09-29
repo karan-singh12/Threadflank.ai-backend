@@ -14,6 +14,7 @@ import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
+import { LoggingInterceptor } from "./common/interceptors/logging.interceptor";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { RedisIoAdapter } from "./common/adapters/redis-io.adapter";
 import multipart from "@fastify/multipart";
@@ -73,7 +74,7 @@ async function bootstrap() {
   });
 
   // Register global interceptor, exception filter, and validation pipe
-  app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({

@@ -25,11 +25,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
       status = exception.getStatus();
       const res = exception.getResponse();
       
-      if (typeof res === "object" && res !== null && "success" in res && "statusCode" in res) {
-        response.status(status).send(res);
-        return;
-      }
-      
       if (typeof res === "string") {
         message = res;
         error = exception.name;
@@ -38,19 +33,38 @@ export class HttpExceptionFilter implements ExceptionFilter {
         error = (res as any).error || exception.name;
       }
     } else {
-      // Unexpected errors (Prisma, driver, runtime) carry internals such as SQL,
-      // file paths and column names — log them, never send them to the client.
-      this.logger.error(
-        `${request?.method} ${request?.url} failed`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
-      message = "Something went wrong on our side. Please try again in a moment.";
+      error = (exception as any)?.name || "UnhandledError";
+      message = exception instanceof Error ? exception.message : String(exception);
     }
-
     // If message is an array (e.g. from class-validator), convert to single string
     const formattedMessage = Array.isArray(message)
       ? message.join(", ")
       : message;
+
+    // Sanitize request body for debugging in terminal
+    let sanitizedBody: any = undefined;
+    if (request?.body && typeof request?.body === "object") {
+      try {
+        sanitizedBody = { ...request.body };
+        const sensitiveKeys = ["password", "token", "secret", "apiKey", "creditCard", "refreshToken"];
+        for (const k of sensitiveKeys) {
+          if (k in sanitizedBody) sanitizedBody[k] = "***REDACTED***";
+        }
+      } catch {}
+    }
+
+    const userId = request?.user?.userId || request?.user?.id || "anonymous";
+    const stack = exception instanceof Error ? exception.stack : undefined;
+
+    // Vivid terminal logging for all catch-time errors
+    console.error(
+      `\n\x1b[41m\x1b[37m[API ERROR CAUGHT]\x1b[0m \x1b[31m${request?.method} ${request?.url} -> HTTP ${status} (${error})\x1b[0m\n` +
+      `  \x1b[1mTime:\x1b[0m    ${new Date().toISOString()}\n` +
+      `  \x1b[1mMessage:\x1b[0m ${formattedMessage}\n` +
+      `  \x1b[1mUser:\x1b[0m    ${userId}\n` +
+      (sanitizedBody ? `  \x1b[1mBody:\x1b[0m    ${JSON.stringify(sanitizedBody)}\n` : "") +
+      (stack ? `  \x1b[90m${stack}\x1b[0m\n` : "")
+    );
 
     // Build the errors array matching Express ValidationError if we have array messages (like validation errors)
     let errors: any[] | undefined = undefined;

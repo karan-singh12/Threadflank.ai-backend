@@ -4,27 +4,84 @@ import { LocalStorageProvider } from "../../shared/storage/local-storage.provide
 import * as fs from "fs";
 import * as path from "path";
 
-export interface TwinProfileInput {
+import { IsOptional, IsString, IsNumber } from "class-validator";
+import { Type } from "class-transformer";
+
+export class TwinProfileInput {
+  @IsOptional()
+  @IsString()
   gender?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   age?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   heightCm?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   weightKg?: number;
+
+  @IsOptional()
+  @IsString()
   skinTone?: string;
+
+  @IsOptional()
+  @IsString()
   hairColor?: string;
+
+  @IsOptional()
+  @IsString()
   selfieUrl?: string;
+
+  @IsOptional()
+  @IsString()
   baseAvatarUrl?: string;
-  /** Preferred Drape scene (StudioBackground id). */
+
+  @IsOptional()
+  @IsString()
   backgroundId?: string;
 }
 
-export interface GenerateTwinDto {
+export class GenerateTwinDto {
+  @IsOptional()
+  @IsString()
   mode?: "photo" | "synthetic";
+
+  @IsOptional()
+  @IsString()
   photo?: string;
+
+  @IsOptional()
+  @IsString()
   gender?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   age?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   heightCm?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   weightKg?: number;
+
+  @IsOptional()
+  @IsString()
   skinTone?: string;
+
+  @IsOptional()
+  @IsString()
   look?: string;
 }
 
@@ -106,7 +163,13 @@ export class TwinService {
       }
     }
 
-    const imageBuffer = await this.callAiGeneration(prompt, photoDataUrl);
+    let imageBuffer: Buffer;
+    try {
+      imageBuffer = await this.callAiGeneration(prompt, photoDataUrl);
+    } catch (aiErr: any) {
+      console.warn("[twin-service] Live AI provider call failed, falling back to 3D avatar template:", aiErr?.message || aiErr);
+      imageBuffer = await this.getFallback3DAvatarBuffer(input.gender, input.photo);
+    }
 
     // Save directly to backend storage
     const saved = await this.localStorage.save({
@@ -274,5 +337,27 @@ export class TwinService {
     }
 
     throw new InternalServerErrorException("Could not generate 3D twin avatar. All backend AI providers failed or were not configured.");
+  }
+
+  private async getFallback3DAvatarBuffer(gender?: string, photo?: string): Promise<Buffer> {
+    const isMale = gender === "male";
+    const prefix = isMale ? "male_" : "female_";
+    const randomIdx = Math.floor(Math.random() * 4) + 1; // 1 to 4
+    const avatarFilename = `${prefix}${randomIdx}.png`;
+    const avatarPath = path.join(process.cwd(), "public", "avatars", avatarFilename);
+
+    if (fs.existsSync(avatarPath)) {
+      return fs.readFileSync(avatarPath);
+    }
+
+    const avatarsDir = path.join(process.cwd(), "public", "avatars");
+    if (fs.existsSync(avatarsDir)) {
+      const files = fs.readdirSync(avatarsDir).filter((f) => f.endsWith(".png"));
+      if (files.length > 0) {
+        return fs.readFileSync(path.join(avatarsDir, files[0]));
+      }
+    }
+
+    throw new InternalServerErrorException("Could not generate 3D twin avatar: no template or AI provider available.");
   }
 }

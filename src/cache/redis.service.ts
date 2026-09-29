@@ -9,7 +9,9 @@ export class RedisService implements OnModuleDestroy {
     this.client = new Redis({
       host: process.env.REDIS_HOST || "127.0.0.1",
       port: parseInt(process.env.REDIS_PORT, 10) || 6379,
-      maxRetriesPerRequest: null,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+      enableOfflineQueue: false,
       lazyConnect: true,
     });
 
