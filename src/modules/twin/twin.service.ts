@@ -169,8 +169,8 @@ export class TwinService {
     try {
       imageBuffer = await this.callAiGeneration(prompt, photoDataUrl);
     } catch (aiErr: any) {
-      console.warn("[twin-service] Live AI provider call failed, falling back to avatar template:", aiErr?.message || aiErr);
-      imageBuffer = await this.getFallbackAvatarBuffer(input.gender, input.photo);
+      console.error("[twin-service] Twin generation failed:", aiErr?.message || aiErr);
+      throw aiErr;
     }
 
     // Save directly to backend storage
@@ -221,11 +221,13 @@ export class TwinService {
     const geminiKey = process.env.GEMINI_API_KEY;
     const replicateToken = process.env.REPLICATE_API_TOKEN;
     const openrouterKey = process.env.OPENROUTER_API_KEY;
+    const errors: string[] = [];
 
     // 1. Try Replicate if token available
     if (replicateToken) {
       try {
         const model = photoDataUrl ? "black-forest-labs/flux-kontext-pro" : "black-forest-labs/flux-schnell";
+        console.log(`[twin-service] Trying Replicate (${model})…`);
         const res = await fetch(`https://api.replicate.com/v1/models/${model}/predictions`, {
           method: "POST",
           headers: {
@@ -242,18 +244,27 @@ export class TwinService {
           const output = Array.isArray(pred.output) ? pred.output[0] : pred.output;
           if (output && typeof output === "string") {
             const imgRes = await fetch(output);
-            if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
+            if (imgRes.ok) {
+              console.log("[twin-service] ✓ Replicate succeeded");
+              return Buffer.from(await imgRes.arrayBuffer());
+            }
           }
         }
-      } catch (e) {
-        console.warn("[twin-backend] Replicate call failed, trying next provider:", e);
+        const errText = !res.ok ? await res.text().catch(() => "") : "no output image";
+        errors.push(`Replicate HTTP ${res.status}: ${errText.slice(0, 200)}`);
+        console.warn("[twin-service] Replicate failed:", errors[errors.length - 1]);
+      } catch (e: any) {
+        errors.push(`Replicate error: ${e?.message || e}`);
+        console.warn("[twin-service] Replicate call failed, trying next provider:", e?.message || e);
       }
     }
 
     // 2. Try Gemini
     if (geminiKey) {
       try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`;
+        const geminiModel = process.env.GEMINI_IMAGE_MODEL || "gemini-2.0-flash-exp";
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`;
+        console.log(`[twin-service] Trying Gemini (${geminiModel})…`);
         const parts: any[] = [{ text: prompt }];
         if (photoDataUrl && photoDataUrl.includes(",")) {
           const [header, b64] = photoDataUrl.split(",");
@@ -266,79 +277,123 @@ export class TwinService {
           headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
           body: JSON.stringify({
             contents: [{ role: "user", parts }],
-            generationConfig: { responseModalities: ["IMAGE"] },
+            generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } },
           }),
         });
         if (res.ok) {
           const data = await res.json();
           const imgData = data?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData?.data)?.inlineData?.data;
-          if (imgData) return Buffer.from(imgData, "base64");
+          if (imgData) {
+            console.log("[twin-service] ✓ Gemini succeeded");
+            return Buffer.from(imgData, "base64");
+          }
+          const reason = data?.promptFeedback?.blockReason ?? data?.candidates?.[0]?.finishReason ?? "no image in response";
+          errors.push(`Gemini returned no image: ${reason}`);
+        } else {
+          const errText = await res.text().catch(() => "");
+          errors.push(`Gemini HTTP ${res.status}: ${errText.slice(0, 200)}`);
         }
-      } catch (e) {
-        console.warn("[twin-backend] Gemini image call failed, trying next provider:", e);
+        console.warn("[twin-service] Gemini failed:", errors[errors.length - 1]);
+      } catch (e: any) {
+        errors.push(`Gemini error: ${e?.message || e}`);
+        console.warn("[twin-service] Gemini image call failed, trying next provider:", e?.message || e);
       }
     }
 
-    // 3. Try OpenAI
+    // 3. Try OpenAI (gpt-image-1 with portrait aspect ratio)
     if (openaiKey) {
       try {
+        console.log("[twin-service] Trying OpenAI (gpt-image-1)…");
         const res = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
           headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "dall-e-3",
+            model: "gpt-image-1",
             prompt,
-            size: "1024x1024",
-            quality: "standard",
+            size: "1024x1536",
+            quality: "medium",
             n: 1,
-            response_format: "b64_json",
           }),
         });
         if (res.ok) {
           const data = await res.json();
           const b64 = data?.data?.[0]?.b64_json;
-          if (b64) return Buffer.from(b64, "base64");
+          if (b64) {
+            console.log("[twin-service] ✓ OpenAI succeeded");
+            return Buffer.from(b64, "base64");
+          }
           const url = data?.data?.[0]?.url;
           if (url) {
             const imgRes = await fetch(url);
-            if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
+            if (imgRes.ok) {
+              console.log("[twin-service] ✓ OpenAI succeeded (URL)");
+              return Buffer.from(await imgRes.arrayBuffer());
+            }
           }
+          errors.push("OpenAI returned no image data");
+        } else {
+          const errText = await res.text().catch(() => "");
+          errors.push(`OpenAI HTTP ${res.status}: ${errText.slice(0, 200)}`);
         }
-      } catch (e) {
-        console.warn("[twin-backend] OpenAI image call failed, trying next provider:", e);
+        console.warn("[twin-service] OpenAI failed:", errors[errors.length - 1]);
+      } catch (e: any) {
+        errors.push(`OpenAI error: ${e?.message || e}`);
+        console.warn("[twin-service] OpenAI image call failed, trying next provider:", e?.message || e);
       }
     }
 
     // 4. Try OpenRouter
     if (openrouterKey) {
       try {
+        const orModel = process.env.OPENROUTER_IMAGE_MODEL || "google/gemini-2.0-flash-exp";
+        console.log(`[twin-service] Trying OpenRouter (${orModel})…`);
         const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: { Authorization: `Bearer ${openrouterKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image",
+            model: orModel,
             modalities: ["image", "text"],
+            max_tokens: 2000,
+            image_config: { aspect_ratio: "3:4" },
             messages: [{ role: "user", content: prompt }],
           }),
         });
         if (res.ok) {
           const data = await res.json();
           const choice = data?.choices?.[0]?.message;
-          const imgUrl = choice?.content?.find?.((c: any) => c.type === "image_url")?.image_url?.url || choice?.image_url?.url;
+          // OpenRouter image response formats
+          const imgUrl =
+            choice?.images?.[0]?.image_url?.url ??
+            choice?.content?.find?.((c: any) => c.type === "image_url")?.image_url?.url ??
+            choice?.image_url?.url;
           if (imgUrl) {
             if (imgUrl.startsWith("data:")) {
+              console.log("[twin-service] ✓ OpenRouter succeeded");
               return Buffer.from(imgUrl.split(",")[1], "base64");
             }
             const imgRes = await fetch(imgUrl);
-            if (imgRes.ok) return Buffer.from(await imgRes.arrayBuffer());
+            if (imgRes.ok) {
+              console.log("[twin-service] ✓ OpenRouter succeeded (URL)");
+              return Buffer.from(await imgRes.arrayBuffer());
+            }
           }
+          errors.push("OpenRouter returned no image");
+        } else {
+          const errText = await res.text().catch(() => "");
+          errors.push(`OpenRouter HTTP ${res.status}: ${errText.slice(0, 200)}`);
         }
-      } catch (e) {
-        console.warn("[twin-backend] OpenRouter image call failed:", e);
+        console.warn("[twin-service] OpenRouter failed:", errors[errors.length - 1]);
+      } catch (e: any) {
+        errors.push(`OpenRouter error: ${e?.message || e}`);
+        console.warn("[twin-service] OpenRouter image call failed:", e?.message || e);
       }
     }
 
-    throw new InternalServerErrorException("Could not generate twin avatar. All backend AI providers failed or were not configured.");
+    const configured = [replicateToken && "Replicate", geminiKey && "Gemini", openaiKey && "OpenAI", openrouterKey && "OpenRouter"].filter(Boolean);
+    console.error(`[twin-service] ALL providers failed. Configured: [${configured.join(", ")}]. Errors:\n  ${errors.join("\n  ")}`);
+    throw new InternalServerErrorException(
+      `Could not generate twin. ${configured.length === 0 ? "No AI image provider is configured (set REPLICATE_API_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY)." : `All ${configured.length} provider(s) failed. Check server logs for details.`}`
+    );
   }
 
   private async getFallbackAvatarBuffer(gender?: string, photo?: string): Promise<Buffer> {
