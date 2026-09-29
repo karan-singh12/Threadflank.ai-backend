@@ -85,12 +85,13 @@ export class GenerateTwinDto {
   look?: string;
 }
 
-const BASE_SHOT_3D =
-  "full-body 3D digital character avatar, Unreal Engine 5 Metahuman style, 3D character render, octane lighting, " +
-  "standing straight facing the camera, arms relaxed at the sides, full body visible from head to feet, " +
-  "wearing a plain fitted white t-shirt and slim dark trousers with simple white sneakers, " +
-  "soft clean 3D studio lighting, smooth 3D skin shading, octane render, 3D character design, " +
-  "directly isolated character with no background from the AI itself, solid plain neutral backdrop with absolutely no background elements or environment, sharp focus, 8k resolution 3D model";
+const BASE_SHOT =
+  "professional fashion model photograph, full-body shot from head to toe, " +
+  "standing straight facing the camera with arms relaxed naturally at the sides, " +
+  "wearing a plain fitted white crew-neck t-shirt and slim dark charcoal trousers with simple white sneakers, " +
+  "studio photography, soft diffused lighting, sharp focus, " +
+  "plain solid light grey background, completely clean background with no objects no shadows no environment, " +
+  "high-resolution realistic photograph, editorial fashion style, natural skin texture";
 
 @Injectable()
 export class TwinService {
@@ -112,7 +113,7 @@ export class TwinService {
   }
 
   /**
-   * Generates a 3D digital twin without background directly on the backend,
+   * Generates a realistic model twin without background directly on the backend,
    * saves the generated image file into cloud/local storage, and persists the twin profile in PostgreSQL.
    */
   async generateAndPersist(userId: string, input: GenerateTwinDto) {
@@ -129,10 +130,11 @@ export class TwinService {
     let prompt: string;
     if (input.mode === "photo" && input.photo) {
       prompt =
-        `Create a full-body 3D stylized digital human character avatar of this exact person without any background, transforming their face, facial features, hairstyle and skin tone into a sleek 3D Metahuman digital twin character. ` +
-        `They are a ${bodyParts}${look ? `, ${look}` : ""}. Show them ${BASE_SHOT_3D}.`;
+        `Create a realistic full-body fashion model photograph of this exact person, preserving their exact face, facial features, hairstyle and skin tone faithfully. ` +
+        `They are a ${bodyParts}${look ? `, ${look}` : ""}. ` +
+        `Show them as a ${BASE_SHOT}.`;
     } else {
-      prompt = `Full-body 3D stylized digital human character avatar of a ${bodyParts}${look ? `, ${look}` : ""} without any background, ${BASE_SHOT_3D}.`;
+      prompt = `Realistic full-body fashion model photograph of a ${bodyParts}${look ? `, ${look}` : ""}, ${BASE_SHOT}.`;
     }
 
     // Resolve photo data URL if provided (supporting data URI, remote URL, or local storage upload)
@@ -167,8 +169,8 @@ export class TwinService {
     try {
       imageBuffer = await this.callAiGeneration(prompt, photoDataUrl);
     } catch (aiErr: any) {
-      console.warn("[twin-service] Live AI provider call failed, falling back to 3D avatar template:", aiErr?.message || aiErr);
-      imageBuffer = await this.getFallback3DAvatarBuffer(input.gender, input.photo);
+      console.warn("[twin-service] Live AI provider call failed, falling back to avatar template:", aiErr?.message || aiErr);
+      imageBuffer = await this.getFallbackAvatarBuffer(input.gender, input.photo);
     }
 
     // Save directly to backend storage
@@ -336,10 +338,10 @@ export class TwinService {
       }
     }
 
-    throw new InternalServerErrorException("Could not generate 3D twin avatar. All backend AI providers failed or were not configured.");
+    throw new InternalServerErrorException("Could not generate twin avatar. All backend AI providers failed or were not configured.");
   }
 
-  private async getFallback3DAvatarBuffer(gender?: string, photo?: string): Promise<Buffer> {
+  private async getFallbackAvatarBuffer(gender?: string, photo?: string): Promise<Buffer> {
     const isMale = gender === "male";
     const prefix = isMale ? "male_" : "female_";
     const randomIdx = Math.floor(Math.random() * 4) + 1; // 1 to 4
@@ -358,6 +360,6 @@ export class TwinService {
       }
     }
 
-    throw new InternalServerErrorException("Could not generate 3D twin avatar: no template or AI provider available.");
+    throw new InternalServerErrorException("Could not generate twin avatar: no template or AI provider available.");
   }
 }
