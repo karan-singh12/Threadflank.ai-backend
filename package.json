@@ -17,10 +17,10 @@
     "seed": "ts-node --transpile-only prisma/seed.ts",
     "seed:discover": "ts-node --transpile-only prisma/seed-discover.ts",
     "seed:demo": "ts-node --transpile-only prisma/seed-demo.ts",
-    "seed:all": "npm run seed && npm run seed:discover && npm run seed:demo",
+    "seed:all": "npm run seed",
     "rag:ingest": "ts-node --transpile-only prisma/seed-rag.ts",
     "db:up": "docker compose up -d --wait",
-    "db:reset": "prisma db push --force-reset && npm run seed:all"
+    "db:reset": "prisma db push --force-reset && npm run seed"
   },
   "dependencies": {
     "@fastify/multipart": "^10.0.0",

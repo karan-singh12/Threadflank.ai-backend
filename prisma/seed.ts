@@ -41,6 +41,9 @@ async function main() {
 
   // ─── Seed Default Legal CMS Content Blocks ──────────────────────────────────
   await seedCmsBlocks();
+
+  // ─── Seed Default Email Templates ───────────────────────────────────────────
+  await seedEmailTemplates();
 }
 
 async function seedCmsBlocks() {
@@ -188,6 +191,35 @@ async function seedCmsBlocks() {
       console.log(`[seed] Created CMS block: ${block.key}`);
     } else {
       console.log(`[seed] CMS block ${block.key} already exists.`);
+    }
+  }
+}
+
+async function seedEmailTemplates() {
+  const templates = [
+    {
+      key: 'welcome',
+      name: 'Welcome email',
+      subject: 'Welcome to Threadflank, {{name}}!',
+      htmlBody: '<h1>Hi {{name}},</h1><p>Your wardrobe just got smarter. Add a few pieces and try your first outfit on your digital twin.</p><p><a href="{{appUrl}}">Open Threadflank</a></p>',
+      variables: ['name', 'appUrl'],
+    },
+    {
+      key: 'password-reset',
+      name: 'Password reset',
+      subject: 'Reset your Threadflank password',
+      htmlBody: '<p>Hi {{name}},</p><p>Use the link below to reset your password. It expires in {{expiresInMinutes}} minutes.</p><p><a href="{{resetUrl}}">Reset password</a></p><p>If you didn\'t ask for this, you can ignore this email.</p>',
+      variables: ['name', 'resetUrl', 'expiresInMinutes'],
+    },
+  ];
+
+  for (const t of templates) {
+    const existing = await prisma.emailTemplate.findUnique({ where: { key: t.key } });
+    if (!existing) {
+      await prisma.emailTemplate.create({ data: t });
+      console.log(`[seed] Created Email Template: ${t.key}`);
+    } else {
+      console.log(`[seed] Email Template ${t.key} already exists.`);
     }
   }
 }
