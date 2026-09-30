@@ -23,6 +23,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { WardrobeModule } from "./modules/wardrobe/wardrobe.module";
 import { LooksModule } from "./modules/looks/looks.module";
 import { TwinModule } from "./modules/twin/twin.module";
+import { DrapeModule } from "./modules/drape/drape.module";
 import { SdkModule } from "./sdk";
 import { AdminAuthModule } from "./modules/admin-auth/admin-auth.module";
 import { AdminUsersModule } from "./modules/admin-users/admin-users.module";
@@ -116,6 +117,7 @@ import { WidgetModule } from "./modules/widget/widget.module";
     WardrobeModule,
     LooksModule,
     TwinModule,
+    DrapeModule,
 
     // ─── GenAI SDK + Admin Panel ─────────────────────────────────────────────
     SdkModule,

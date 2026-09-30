@@ -19,11 +19,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
   ) {}
 
   private buildChatModel(request: GenerateRequest) {
+    const defaultMaxTokens =
+      this.name === 'openrouter'
+        ? (parseInt(process.env.OPENROUTER_MAX_TOKENS || '1024', 10) || 1024)
+        : undefined;
+
     return new ChatOpenAI({
       apiKey: this.apiKey,
       model: request.model,
       temperature: request.temperature ?? 0.7,
-      maxTokens: request.maxTokens,
+      maxTokens: request.maxTokens ?? defaultMaxTokens,
       configuration: this.baseURL ? { baseURL: this.baseURL } : undefined,
     });
   }

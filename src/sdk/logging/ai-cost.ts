@@ -10,6 +10,7 @@ type Price = { input?: number; output?: number; perRun?: number };
 
 const DEFAULT_PRICES: Record<string, Price> = {
   'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+  'google/gemini-2.5-flash': { input: 0.3, output: 2.5 },
   'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
   'gemini-2.5-pro': { input: 1.25, output: 10 },
   'claude-opus-5': { input: 5, output: 25 },

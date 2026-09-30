@@ -982,3 +982,19 @@ model ShareEvent {
   @@index([sharedBy])
   @@index([createdAt])
 }
+
+// ─── Drape studio generation results ──────────────────────────────────────────
+
+model DrapedResult {
+  id           String   @id @default(cuid())
+  userId       String
+  imageUrl     String
+  slots        Json     // string[] — GarmentSlot values applied, e.g. ["top","shoes"]
+  provider     String   // "replicate" | "gemini"
+  model        String   // model identifier, e.g. "cuuupid/idm-vton" or "gemini-2.0-flash-exp"
+  noBackground Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+

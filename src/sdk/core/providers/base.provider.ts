@@ -14,11 +14,18 @@ export interface LLMProvider {
   embed?(texts: string[]): Promise<number[][]>;
 }
 
-/** Thrown by a provider adapter on a transient failure (rate limit, 5xx, timeout) so the
+/** Thrown by a provider adapter on a transient failure (rate limit, 5xx, timeout, quota exhaustion) so the
  * ModelRouter knows it's safe to retry / fall back to the next provider. */
 export class ProviderTransientError extends Error {
-  constructor(public readonly provider: string, cause: unknown) {
-    super(`[${provider}] transient failure: ${cause instanceof Error ? cause.message : String(cause)}`);
+  constructor(
+    public readonly provider: string,
+    cause: unknown,
+    public readonly isExhausted = false,
+  ) {
+    super(
+      `[${provider}] ${isExhausted ? 'quota exhausted' : 'transient failure'}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
     this.name = 'ProviderTransientError';
   }
 }
+

@@ -104,4 +104,34 @@ describe('ModelRouter', () => {
 
     expect(openrouter.generate).toHaveBeenCalledTimes(1);
   });
+
+  it('falls back from Gemini to OpenRouter when Gemini quota is exhausted', async () => {
+    const geminiExhausted = makeProvider('gemini', new ProviderTransientError('gemini', new Error('RESOURCE_EXHAUSTED: quota exceeded'), true));
+    const openrouter = makeProvider('openrouter', async () => ({ content: 'from openrouter fallback', provider: 'openrouter', model: 'google/gemini-2.5-flash' }));
+
+    mockClientFactory.get.mockImplementation((name: string) => (name === 'gemini' ? geminiExhausted : name === 'openrouter' ? openrouter : makeProvider(name, async () => ({}))));
+
+    const result = await router.execute({ taskType: 'caption-generation', messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(result.content).toBe('from openrouter fallback');
+    expect(geminiExhausted.generate).toHaveBeenCalledTimes(1);
+    expect(openrouter.generate).toHaveBeenCalledTimes(1);
+    expect(router.isProviderExhausted('gemini')).toBe(true);
+  });
+
+  it('routes directly to OpenRouter when Gemini is in cooldown from prior exhaustion', async () => {
+    const gemini = makeProvider('gemini', async () => ({ content: 'from gemini', provider: 'gemini' }));
+    const openrouter = makeProvider('openrouter', async () => ({ content: 'from openrouter direct', provider: 'openrouter' }));
+
+    mockClientFactory.get.mockImplementation((name: string) => (name === 'gemini' ? gemini : name === 'openrouter' ? openrouter : makeProvider(name, async () => ({}))));
+
+    // Set Gemini in cooldown
+    router.setProviderExhausted('gemini', true, 60_000);
+
+    const result = await router.execute({ taskType: 'caption-generation', messages: [{ role: 'user', content: 'hello' }] });
+
+    expect(result.content).toBe('from openrouter direct');
+    expect(openrouter.generate).toHaveBeenCalledTimes(1);
+    expect(gemini.generate).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,7 @@
-import { Injectable, BadRequestException, InternalServerErrorException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException, InternalServerErrorException, Logger } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { LocalStorageProvider } from "../../shared/storage/local-storage.provider";
+import { IStorageProvider, STORAGE_PROVIDER } from "../../shared/storage/storage.interface";
+import { ImageProviderService } from "../../shared/image-provider/image-provider.service";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -41,25 +42,24 @@ export class TwinProfileInput {
 
   @IsOptional()
   @IsString()
-  baseAvatarUrl?: string;
+  avatarUrl?: string;
 
   @IsOptional()
   @IsString()
-  backgroundId?: string;
+  baseAvatarUrl?: string;
 }
 
 export class GenerateTwinDto {
-  @IsOptional()
   @IsString()
-  mode?: "photo" | "synthetic";
-
-  @IsOptional()
-  @IsString()
-  photo?: string;
+  mode: "photo" | "avatar";
 
   @IsOptional()
   @IsString()
   gender?: string;
+
+  @IsOptional()
+  @IsString()
+  photo?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -95,9 +95,12 @@ const BASE_SHOT =
 
 @Injectable()
 export class TwinService {
+  private readonly logger = new Logger(TwinService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly localStorage: LocalStorageProvider
+    private readonly imageProvider: ImageProviderService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: IStorageProvider,
   ) {}
 
   async find(userId: string) {
@@ -114,7 +117,7 @@ export class TwinService {
 
   /**
    * Generates a realistic model twin without background directly on the backend,
-   * saves the generated image file into cloud/local storage, and persists the twin profile in PostgreSQL.
+   * saves the generated image file into Cloudflare R2 / storage, and persists the twin profile in PostgreSQL.
    */
   async generateAndPersist(userId: string, input: GenerateTwinDto) {
     const gender = input.gender === "male" ? "man" : input.gender === "female" ? "woman" : "person";
@@ -151,7 +154,7 @@ export class TwinService {
             photoDataUrl = `data:${mime};base64,${buf.toString("base64")}`;
           }
         } catch (e) {
-          console.warn("[twin-service] Failed to fetch photo URL:", e);
+          this.logger.warn(`Failed to fetch photo URL: ${e}`);
         }
       } else {
         const cleanPath = input.photo.replace(/^\/+/, "");
@@ -165,22 +168,32 @@ export class TwinService {
       }
     }
 
+    // Delegate generation directly to ImageProviderService (Gemini / Replicate)
+    const genResult = await this.imageProvider.generate({
+      prompt,
+      images: photoDataUrl ? [photoDataUrl] : [],
+      aspectRatio: "3:4",
+    });
+
     let imageBuffer: Buffer;
-    try {
-      imageBuffer = await this.callAiGeneration(prompt, photoDataUrl);
-    } catch (aiErr: any) {
-      console.error("[twin-service] Twin generation failed:", aiErr?.message || aiErr);
-      throw aiErr;
+    if (genResult.url.startsWith("data:")) {
+      const base64 = genResult.url.split(",")[1] || genResult.url;
+      imageBuffer = Buffer.from(base64, "base64");
+    } else {
+      const res = await fetch(genResult.url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch generated twin image from ${genResult.url} (HTTP ${res.status})`);
+      }
+      imageBuffer = Buffer.from(await res.arrayBuffer());
     }
 
-    // Save directly to backend storage
-    const saved = await this.localStorage.save({
+    // Save directly to Cloudflare R2 / storage
+    const filename = `twin-${userId}-${Date.now()}.png`;
+    const saved = await this.storage.save({
       buffer: imageBuffer,
-      filename: `twin-${userId}-${Date.now()}.png`,
-      imagePath: "twins",
-      fieldname: "avatar",
+      filename,
+      folder: "twin-images",
       mimetype: "image/png",
-      encoding: "7bit",
     });
 
     // Persist twin profile in PostgreSQL
@@ -210,211 +223,8 @@ export class TwinService {
     return {
       profile,
       imageUrl: saved.url,
+      provider: genResult.provider,
+      model: genResult.model,
     };
-  }
-
-  /**
-   * Calls AI providers (Gemini, OpenAI, Replicate, OpenRouter) with fallback.
-   */
-  private async callAiGeneration(prompt: string, photoDataUrl?: string): Promise<Buffer> {
-    const openaiKey = process.env.OPENAI_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
-    const replicateToken = process.env.REPLICATE_API_TOKEN;
-    const openrouterKey = process.env.OPENROUTER_API_KEY;
-    const errors: string[] = [];
-
-    // 1. Try Replicate if token available
-    if (replicateToken) {
-      try {
-        const model = photoDataUrl ? "black-forest-labs/flux-kontext-pro" : "black-forest-labs/flux-schnell";
-        console.log(`[twin-service] Trying Replicate (${model})…`);
-        const res = await fetch(`https://api.replicate.com/v1/models/${model}/predictions`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${replicateToken}`,
-            "Content-Type": "application/json",
-            Prefer: "wait",
-          },
-          body: JSON.stringify({
-            input: photoDataUrl ? { prompt, input_image: photoDataUrl, aspect_ratio: "3:4" } : { prompt, aspect_ratio: "3:4" },
-          }),
-        });
-        if (res.ok) {
-          const pred = await res.json();
-          const output = Array.isArray(pred.output) ? pred.output[0] : pred.output;
-          if (output && typeof output === "string") {
-            const imgRes = await fetch(output);
-            if (imgRes.ok) {
-              console.log("[twin-service] ✓ Replicate succeeded");
-              return Buffer.from(await imgRes.arrayBuffer());
-            }
-          }
-        }
-        const errText = !res.ok ? await res.text().catch(() => "") : "no output image";
-        errors.push(`Replicate HTTP ${res.status}: ${errText.slice(0, 200)}`);
-        console.warn("[twin-service] Replicate failed:", errors[errors.length - 1]);
-      } catch (e: any) {
-        errors.push(`Replicate error: ${e?.message || e}`);
-        console.warn("[twin-service] Replicate call failed, trying next provider:", e?.message || e);
-      }
-    }
-
-    // 2. Try Gemini
-    if (geminiKey) {
-      try {
-        const geminiModel = process.env.GEMINI_IMAGE_MODEL || "gemini-2.0-flash-exp";
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`;
-        console.log(`[twin-service] Trying Gemini (${geminiModel})…`);
-        const parts: any[] = [{ text: prompt }];
-        if (photoDataUrl && photoDataUrl.includes(",")) {
-          const [header, b64] = photoDataUrl.split(",");
-          const mime = header.split(";")[0]?.replace("data:", "") || "image/jpeg";
-          parts.unshift({ inlineData: { mimeType: mime, data: b64 } });
-        }
-
-        const res = await fetch(geminiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts }],
-            generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } },
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const imgData = data?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData?.data)?.inlineData?.data;
-          if (imgData) {
-            console.log("[twin-service] ✓ Gemini succeeded");
-            return Buffer.from(imgData, "base64");
-          }
-          const reason = data?.promptFeedback?.blockReason ?? data?.candidates?.[0]?.finishReason ?? "no image in response";
-          errors.push(`Gemini returned no image: ${reason}`);
-        } else {
-          const errText = await res.text().catch(() => "");
-          errors.push(`Gemini HTTP ${res.status}: ${errText.slice(0, 200)}`);
-        }
-        console.warn("[twin-service] Gemini failed:", errors[errors.length - 1]);
-      } catch (e: any) {
-        errors.push(`Gemini error: ${e?.message || e}`);
-        console.warn("[twin-service] Gemini image call failed, trying next provider:", e?.message || e);
-      }
-    }
-
-    // 3. Try OpenAI (gpt-image-1 with portrait aspect ratio)
-    if (openaiKey) {
-      try {
-        console.log("[twin-service] Trying OpenAI (gpt-image-1)…");
-        const res = await fetch("https://api.openai.com/v1/images/generations", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "gpt-image-1",
-            prompt,
-            size: "1024x1536",
-            quality: "medium",
-            n: 1,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const b64 = data?.data?.[0]?.b64_json;
-          if (b64) {
-            console.log("[twin-service] ✓ OpenAI succeeded");
-            return Buffer.from(b64, "base64");
-          }
-          const url = data?.data?.[0]?.url;
-          if (url) {
-            const imgRes = await fetch(url);
-            if (imgRes.ok) {
-              console.log("[twin-service] ✓ OpenAI succeeded (URL)");
-              return Buffer.from(await imgRes.arrayBuffer());
-            }
-          }
-          errors.push("OpenAI returned no image data");
-        } else {
-          const errText = await res.text().catch(() => "");
-          errors.push(`OpenAI HTTP ${res.status}: ${errText.slice(0, 200)}`);
-        }
-        console.warn("[twin-service] OpenAI failed:", errors[errors.length - 1]);
-      } catch (e: any) {
-        errors.push(`OpenAI error: ${e?.message || e}`);
-        console.warn("[twin-service] OpenAI image call failed, trying next provider:", e?.message || e);
-      }
-    }
-
-    // 4. Try OpenRouter
-    if (openrouterKey) {
-      try {
-        const orModel = process.env.OPENROUTER_IMAGE_MODEL || "google/gemini-2.0-flash-exp";
-        console.log(`[twin-service] Trying OpenRouter (${orModel})…`);
-        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${openrouterKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: orModel,
-            modalities: ["image", "text"],
-            max_tokens: 2000,
-            image_config: { aspect_ratio: "3:4" },
-            messages: [{ role: "user", content: prompt }],
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const choice = data?.choices?.[0]?.message;
-          // OpenRouter image response formats
-          const imgUrl =
-            choice?.images?.[0]?.image_url?.url ??
-            choice?.content?.find?.((c: any) => c.type === "image_url")?.image_url?.url ??
-            choice?.image_url?.url;
-          if (imgUrl) {
-            if (imgUrl.startsWith("data:")) {
-              console.log("[twin-service] ✓ OpenRouter succeeded");
-              return Buffer.from(imgUrl.split(",")[1], "base64");
-            }
-            const imgRes = await fetch(imgUrl);
-            if (imgRes.ok) {
-              console.log("[twin-service] ✓ OpenRouter succeeded (URL)");
-              return Buffer.from(await imgRes.arrayBuffer());
-            }
-          }
-          errors.push("OpenRouter returned no image");
-        } else {
-          const errText = await res.text().catch(() => "");
-          errors.push(`OpenRouter HTTP ${res.status}: ${errText.slice(0, 200)}`);
-        }
-        console.warn("[twin-service] OpenRouter failed:", errors[errors.length - 1]);
-      } catch (e: any) {
-        errors.push(`OpenRouter error: ${e?.message || e}`);
-        console.warn("[twin-service] OpenRouter image call failed:", e?.message || e);
-      }
-    }
-
-    const configured = [replicateToken && "Replicate", geminiKey && "Gemini", openaiKey && "OpenAI", openrouterKey && "OpenRouter"].filter(Boolean);
-    console.error(`[twin-service] ALL providers failed. Configured: [${configured.join(", ")}]. Errors:\n  ${errors.join("\n  ")}`);
-    throw new InternalServerErrorException(
-      `Could not generate twin. ${configured.length === 0 ? "No AI image provider is configured (set REPLICATE_API_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY)." : `All ${configured.length} provider(s) failed. Check server logs for details.`}`
-    );
-  }
-
-  private async getFallbackAvatarBuffer(gender?: string, photo?: string): Promise<Buffer> {
-    const isMale = gender === "male";
-    const prefix = isMale ? "male_" : "female_";
-    const randomIdx = Math.floor(Math.random() * 4) + 1; // 1 to 4
-    const avatarFilename = `${prefix}${randomIdx}.png`;
-    const avatarPath = path.join(process.cwd(), "public", "avatars", avatarFilename);
-
-    if (fs.existsSync(avatarPath)) {
-      return fs.readFileSync(avatarPath);
-    }
-
-    const avatarsDir = path.join(process.cwd(), "public", "avatars");
-    if (fs.existsSync(avatarsDir)) {
-      const files = fs.readdirSync(avatarsDir).filter((f) => f.endsWith(".png"));
-      if (files.length > 0) {
-        return fs.readFileSync(path.join(avatarsDir, files[0]));
-      }
-    }
-
-    throw new InternalServerErrorException("Could not generate twin avatar: no template or AI provider available.");
   }
 }

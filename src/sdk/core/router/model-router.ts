@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ClientFactory, ProviderNotConfiguredError } from '../client-factory';
 import { ROUTER_CONFIG, modelForProvider } from './router-config';
 import { ProviderName, RouteOverride, TaskType } from './router.types';
 import { GenerateRequest, GenerateResponse } from '../providers/provider.types';
 import { ProviderTransientError } from '../providers/base.provider';
+import { isQuotaExhaustedError } from '../providers/retry.util';
 import { AiRequestLoggerService } from '../../logging/ai-request-logger.service';
 import { MESSAGES } from '../../../common/constants/messages.constant';
 
@@ -16,11 +17,15 @@ export interface RouterExecuteInput extends Omit<GenerateRequest, 'model'> {
 /**
  * Picks a provider+model per request (explicit override > task-type routing >
  * default), executes it, and falls back across ROUTER_CONFIG.fallbackChain on
- * a hard failure. Every attempt — success or failure — is logged via
- * AiRequestLoggerService so cost/latency/provider selection stays visible.
+ * a hard failure or quota exhaustion. If Gemini is exhausted, requests fall back
+ * to OpenRouter. A temporary cooldown deprioritizes exhausted providers so
+ * subsequent requests don't waste round-trips waiting for a failing provider.
  */
 @Injectable()
 export class ModelRouter {
+  private readonly logger = new Logger(ModelRouter.name);
+  private readonly exhaustionCooldowns = new Map<ProviderName, number>();
+
   constructor(
     private readonly clientFactory: ClientFactory,
     private readonly requestLogger: AiRequestLoggerService,
@@ -35,9 +40,31 @@ export class ModelRouter {
     return { provider: ROUTER_CONFIG.defaultProvider, model: modelForProvider(ROUTER_CONFIG.defaultProvider) };
   }
 
-  /** The routed provider first, then the rest of the fallback chain in its configured order. */
+  /**
+   * The routed provider first, then the rest of the fallback chain in its configured order.
+   * If a provider is currently marked exhausted, it is temporarily deprioritized to the
+   * end of the candidate list so active providers (such as OpenRouter) serve requests immediately.
+   */
   private fallbackOrder(startingFrom: ProviderName): ProviderName[] {
-    return [startingFrom, ...ROUTER_CONFIG.fallbackChain.filter((p) => p !== startingFrom)];
+    const chain = [startingFrom, ...ROUTER_CONFIG.fallbackChain.filter((p) => p !== startingFrom)];
+    const now = Date.now();
+    const active = chain.filter((p) => (this.exhaustionCooldowns.get(p) ?? 0) <= now);
+    const exhausted = chain.filter((p) => (this.exhaustionCooldowns.get(p) ?? 0) > now);
+    return [...active, ...exhausted];
+  }
+
+  /** Checks if a provider is currently under exhaustion cooldown. */
+  isProviderExhausted(provider: ProviderName): boolean {
+    return (this.exhaustionCooldowns.get(provider) ?? 0) > Date.now();
+  }
+
+  /** Clear or set exhaustion status (useful for tests or operational resets). */
+  setProviderExhausted(provider: ProviderName, exhausted: boolean, cooldownMs = 60_000): void {
+    if (exhausted) {
+      this.exhaustionCooldowns.set(provider, Date.now() + cooldownMs);
+    } else {
+      this.exhaustionCooldowns.delete(provider);
+    }
   }
 
   async execute(input: RouterExecuteInput): Promise<GenerateResponse> {
@@ -52,7 +79,7 @@ export class ModelRouter {
       this.clientFactory.isConfigured(p),
     );
     if (candidates.length === 0) {
-      throw new Error(`${MESSAGES.sdk.providerFailure}: no LLM provider is configured (set GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY)`);
+      throw new Error(`${MESSAGES.sdk.providerFailure}: no LLM provider is configured (set GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY)`);
     }
 
     let lastError: unknown;
@@ -71,6 +98,9 @@ export class ModelRouter {
           maxTokens: input.maxTokens,
         });
 
+        // Provider succeeded — clear any previous cooldown
+        this.exhaustionCooldowns.delete(providerName);
+
         await this.requestLogger.log({
           provider: providerName,
           model,
@@ -84,6 +114,15 @@ export class ModelRouter {
         return response;
       } catch (error) {
         lastError = error;
+        const isExhausted =
+          (error instanceof ProviderTransientError && error.isExhausted) || isQuotaExhaustedError(error);
+
+        if (isExhausted) {
+          const cooldownMs = parseInt(process.env.PROVIDER_COOLDOWN_MS || '60000', 10) || 60_000;
+          this.exhaustionCooldowns.set(providerName, Date.now() + cooldownMs);
+          this.logger.warn(`Provider [${providerName}] quota exhausted. Falling back across chain. Cooldown active for ${cooldownMs}ms.`);
+        }
+
         await this.requestLogger.log({
           provider: providerName,
           model,
@@ -93,8 +132,9 @@ export class ModelRouter {
           errorMessage: error instanceof Error ? error.message : String(error),
           requestedBy: input.requestedBy,
         });
-        // Only a transient/provider-level failure triggers fallback to the next provider.
-        if (!(error instanceof ProviderTransientError)) {
+
+        // Only a transient or quota-exhausted failure triggers fallback to the next provider.
+        if (!(error instanceof ProviderTransientError) && !isExhausted) {
           throw error;
         }
       }
