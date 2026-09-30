@@ -7,6 +7,11 @@ export type Cutout = { png: Buffer; box: SubjectBox | null };
 
 type Segmenter = (image: unknown) => Promise<unknown>;
 
+// Safe runtime dynamic import helper that bypasses TypeScript compile-time module resolution
+const dynamicImport = async (moduleName: string): Promise<any> => {
+    return new Function('m', 'return import(m)')(moduleName);
+};
+
 /**
  * Removes the studio backdrop from a twin or render so the person can stand
  * directly in a Drape scene. Runs MODNet (Apache-2.0, ~6.6 MB at 8-bit) through
@@ -20,11 +25,11 @@ export class CutoutService {
     private readonly CACHE_MAX = 60;
 
     private getSegmenter(): Promise<Segmenter> {
-        this.segmenterPromise ??= import('@huggingface/transformers')
-            .then(({ pipeline }) => pipeline('background-removal', 'Xenova/modnet', { dtype: 'q8' }) as unknown as Promise<Segmenter>)
-            .catch((err) => {
+        this.segmenterPromise ??= dynamicImport('@huggingface/transformers')
+            .then(({ pipeline }: any) => pipeline('background-removal', 'Xenova/modnet', { dtype: 'q8' }) as unknown as Promise<Segmenter>)
+            .catch((err: any) => {
                 this.segmenterPromise = null;
-                this.logger.error('Failed to load MODNet segmentation model', err);
+                this.logger.warn(`MODNet background-removal model unavailable: ${err?.message || err}`);
                 throw err;
             });
         return this.segmenterPromise;
@@ -60,6 +65,7 @@ export class CutoutService {
 
     /**
      * Removes background from input image buffer and returns PNG cutout with subject box.
+     * Gracefully falls back to original input buffer if optional ML modules are not present.
      */
     async removeBackground(input: Buffer): Promise<Cutout> {
         const key = createHash('sha1').update(input).digest('hex');
@@ -67,13 +73,14 @@ export class CutoutService {
         if (hit) return hit;
 
         try {
-            const sharpModule = await import('sharp');
+            const sharpModule = await dynamicImport('sharp');
             const sharp = sharpModule.default || sharpModule;
-            const [{ RawImage }, segment] = await Promise.all([
-                import('@huggingface/transformers'),
+            const [transformersModule, segment] = await Promise.all([
+                dynamicImport('@huggingface/transformers'),
                 this.getSegmenter(),
             ]);
 
+            const RawImage = transformersModule.RawImage;
             const image = await RawImage.fromBlob(new Blob([new Uint8Array(input)]));
             const result = await segment(image);
             const out = (Array.isArray(result) ? result[0] : result) as {
@@ -106,7 +113,7 @@ export class CutoutService {
 
             return cutout;
         } catch (err: any) {
-            this.logger.warn(`MODNet background cutout encountered issue: ${err?.message || err}. Falling back to original image.`);
+            this.logger.warn(`MODNet background cutout skipped: ${err?.message || err}. Returning original image.`);
             return { png: input, box: null };
         }
     }
