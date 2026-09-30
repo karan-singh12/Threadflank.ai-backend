@@ -168,23 +168,47 @@ export class TwinService {
       }
     }
 
-    // Delegate generation directly to ImageProviderService (Gemini / Replicate)
-    const genResult = await this.imageProvider.generate({
-      prompt,
-      images: photoDataUrl ? [photoDataUrl] : [],
-      aspectRatio: "3:4",
-    });
-
     let imageBuffer: Buffer;
-    if (genResult.url.startsWith("data:")) {
-      const base64 = genResult.url.split(",")[1] || genResult.url;
-      imageBuffer = Buffer.from(base64, "base64");
-    } else {
-      const res = await fetch(genResult.url);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch generated twin image from ${genResult.url} (HTTP ${res.status})`);
+    let providerName = "gemini";
+    let modelName = "gemini-2.5-flash-image";
+
+    try {
+      // Delegate generation directly to ImageProviderService (Gemini / Replicate)
+      const genResult = await this.imageProvider.generate({
+        prompt,
+        images: photoDataUrl ? [photoDataUrl] : [],
+        aspectRatio: "3:4",
+      });
+
+      providerName = genResult.provider;
+      modelName = genResult.model;
+
+      if (genResult.url.startsWith("data:")) {
+        const base64 = genResult.url.split(",")[1] || genResult.url;
+        imageBuffer = Buffer.from(base64, "base64");
+      } else {
+        const res = await fetch(genResult.url);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch generated twin image from ${genResult.url} (HTTP ${res.status})`);
+        }
+        imageBuffer = Buffer.from(await res.arrayBuffer());
       }
-      imageBuffer = Buffer.from(await res.arrayBuffer());
+    } catch (aiErr: any) {
+      this.logger.warn(
+        `AI Twin Generation provider failed (${aiErr?.message || aiErr}). Using studio model template.`,
+      );
+      // Gracefully fall back to pre-rendered template avatar matching user's gender
+      const isMale = input.gender === "male";
+      const prefix = isMale ? "male_" : "female_";
+      const randomIdx = Math.floor(Math.random() * 4) + 1;
+      const avatarPath = path.join(process.cwd(), "public", "avatars", `${prefix}${randomIdx}.png`);
+      if (fs.existsSync(avatarPath)) {
+        imageBuffer = fs.readFileSync(avatarPath);
+        providerName = "studio-template";
+        modelName = `${prefix}${randomIdx}.png`;
+      } else {
+        throw aiErr;
+      }
     }
 
     // Save directly to Cloudflare R2 / storage
@@ -223,8 +247,8 @@ export class TwinService {
     return {
       profile,
       imageUrl: saved.url,
-      provider: genResult.provider,
-      model: genResult.model,
+      provider: providerName,
+      model: modelName,
     };
   }
 }

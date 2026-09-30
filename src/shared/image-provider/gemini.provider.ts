@@ -8,7 +8,7 @@ type Inline = { mimeType: string; data: string };
  *
  * Uses the Gemini generateContent API with responseModalities=["IMAGE"].
  * Accepts data URIs or public HTTPS URLs as reference images.
- * Optimized with high-threshold safety settings suitable for fashion photography & virtual try-on.
+ * Optimized for fashion model photography & virtual try-on.
  */
 @Injectable()
 export class GeminiImageProvider implements ImageProvider {
@@ -19,7 +19,12 @@ export class GeminiImageProvider implements ImageProvider {
     }
 
     private get model(): string {
-        return process.env.GEMINI_IMAGE_MODEL?.trim() || 'gemini-2.0-flash-exp';
+        const configured = process.env.GEMINI_IMAGE_MODEL?.trim();
+        // Discard deprecated experimental models that return 404
+        if (!configured || configured === 'gemini-2.0-flash-exp') {
+            return 'gemini-2.5-flash-image';
+        }
+        return configured;
     }
 
     isConfigured(): boolean {
@@ -47,62 +52,87 @@ export class GeminiImageProvider implements ImageProvider {
 
         parts.push({ text: promptText });
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': this.apiKey,
-            },
-            body: JSON.stringify({
-                contents: [{ role: 'user', parts }],
-                generationConfig: {
-                    responseModalities: ['IMAGE'],
-                    imageConfig: { aspectRatio: job.aspectRatio ?? '3:4' },
-                },
-                safetySettings: [
-                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
-                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
-                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
-                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
-                ],
-            }),
-        });
+        const candidateModels = [this.model, 'gemini-2.5-flash-image', 'gemini-3.1-flash-image'];
+        const uniqueModels = Array.from(new Set(candidateModels));
 
-        if (!res.ok) {
-            const body = await res.text().catch(() => '');
-            const isQuota =
-                res.status === 402 ||
-                res.status === 429 ||
-                /RESOURCE_EXHAUSTED|insufficient_quota/.test(body);
-            throw Object.assign(
-                new Error(`Gemini HTTP ${res.status}: ${body.slice(0, 300)}`),
-                { quota: isQuota, model: this.model },
-            );
+        let lastError: any = null;
+
+        for (const modelToTry of uniqueModels) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}:generateContent`;
+
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-goog-api-key': this.apiKey,
+                    },
+                    body: JSON.stringify({
+                        contents: [{ role: 'user', parts }],
+                        generationConfig: {
+                            responseModalities: ['IMAGE'],
+                            imageConfig: { aspectRatio: job.aspectRatio ?? '3:4' },
+                        },
+                        safetySettings: [
+                            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+                            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+                            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+                            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+                        ],
+                    }),
+                });
+
+                if (!res.ok) {
+                    const body = await res.text().catch(() => '');
+                    const isQuota =
+                        res.status === 402 ||
+                        res.status === 429 ||
+                        /RESOURCE_EXHAUSTED|insufficient_quota/.test(body);
+
+                    // If 404, try next candidate model
+                    if (res.status === 404 && modelToTry !== uniqueModels[uniqueModels.length - 1]) {
+                        this.logger.warn(`Model ${modelToTry} returned 404, attempting fallback model...`);
+                        continue;
+                    }
+
+                    throw Object.assign(
+                        new Error(`Gemini HTTP ${res.status}: ${body.slice(0, 300)}`),
+                        { quota: isQuota, model: modelToTry },
+                    );
+                }
+
+                type GeminiPart = { text?: string; inlineData?: Inline };
+                const data = (await res.json()) as {
+                    candidates?: {
+                        content?: { parts?: GeminiPart[] };
+                        finishReason?: string;
+                    }[];
+                    promptFeedback?: { blockReason?: string };
+                };
+
+                const candidate = data.candidates?.[0];
+                const image = candidate?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
+
+                if (image) {
+                    const dataUri = `data:${image.mimeType || 'image/png'};base64,${image.data}`;
+                    return { url: dataUri, provider: 'gemini', model: modelToTry };
+                }
+
+                const reason =
+                    data.promptFeedback?.blockReason ??
+                    candidate?.finishReason ??
+                    'no image returned';
+                throw new Error(`Gemini returned no image (${reason})`);
+            } catch (err: any) {
+                lastError = err;
+                if (err?.status === 404 && modelToTry !== uniqueModels[uniqueModels.length - 1]) {
+                    continue;
+                }
+                break;
+            }
         }
 
-        type GeminiPart = { text?: string; inlineData?: Inline };
-        const data = (await res.json()) as {
-            candidates?: {
-                content?: { parts?: GeminiPart[] };
-                finishReason?: string;
-            }[];
-            promptFeedback?: { blockReason?: string };
-        };
-
-        const candidate = data.candidates?.[0];
-        const image = candidate?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
-
-        if (image) {
-            const dataUri = `data:${image.mimeType || 'image/png'};base64,${image.data}`;
-            return { url: dataUri, provider: 'gemini', model: this.model };
-        }
-
-        const reason =
-            data.promptFeedback?.blockReason ??
-            candidate?.finishReason ??
-            'no image returned';
-        throw new Error(`Gemini returned no image (${reason})`);
+        throw lastError;
     }
 
     // ── Input helpers ──────────────────────────────────────────────────────────
