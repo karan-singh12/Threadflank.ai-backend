@@ -2,13 +2,13 @@ import { Module } from "@nestjs/common";
 import { UploadsController } from "./uploads.controller";
 import { UploadsService } from "./uploads.service";
 import { AuthModule } from "../../auth/auth.module";
-import { LocalStorageProvider } from "../../shared/storage/local-storage.provider";
+import { StorageModule } from "../../shared/storage/storage.module";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, StorageModule.register()],
   controllers: [UploadsController],
-  providers: [UploadsService, LocalStorageProvider],
-  exports: [UploadsService, LocalStorageProvider],
+  providers: [UploadsService],
+  exports: [UploadsService, StorageModule],
 })
 export class UploadsModule {}
 

@@ -1,9 +1,11 @@
-import { Injectable, BadRequestException } from "@nestjs/common";
-import { LocalStorageProvider } from "../../shared/storage/local-storage.provider";
+import { Injectable, BadRequestException, Inject } from "@nestjs/common";
+import * as path from "path";
+import { IStorageProvider, STORAGE_PROVIDER } from "../../shared/storage/storage.interface";
+import { APP_CONSTANTS } from "../../common/constants/app.constant";
 
 @Injectable()
 export class UploadsService {
-  constructor(private readonly localStorage: LocalStorageProvider) {}
+  constructor(@Inject(STORAGE_PROVIDER) private readonly storage: IStorageProvider) {}
 
   async handleMultipart(req: any): Promise<void> {
     if (typeof req.isMultipart !== "function" || !req.isMultipart()) {
@@ -32,26 +34,38 @@ export class UploadsService {
       }
     }
 
-    const imagePath = body.imagePath || "general";
+    // Folder is used as an object-key prefix; keep it to a safe single segment.
+    const imagePath = String(body.imagePath || "general").replace(/[^a-zA-Z0-9_-]/g, "") || "general";
 
     for (const tempFile of tempFiles) {
-      const result = await this.localStorage.save({
+      const ext = path.extname(tempFile.part.filename || "").toLowerCase().replace(".", "");
+      if (
+        ["user", "streamer", "billboard"].includes(imagePath) &&
+        !(APP_CONSTANTS.uploads.allowedImageTypes as readonly string[]).includes(ext)
+      ) {
+        throw new BadRequestException(
+          `Only ${APP_CONSTANTS.uploads.allowedImageTypes.join(", ")} files are allowed.`,
+        );
+      }
+
+      // Goes to R2 (or Supabase / local disk, whichever StorageModule selected).
+      // `imagePath` is also passed for the local-disk fallback, which names the folder that way.
+      const result = await this.storage.save({
         buffer: tempFile.buffer,
         filename: tempFile.part.filename,
+        folder: imagePath,
         imagePath,
-        fieldname: tempFile.part.fieldname,
         mimetype: tempFile.part.mimetype,
-        encoding: tempFile.part.encoding,
-      });
+      } as any);
 
       fileInfo = {
-        fieldname: result.fieldname,
-        originalname: result.originalname,
-        encoding: result.encoding,
-        mimetype: result.mimetype,
-        destination: result.destination,
-        filename: result.filename,
+        fieldname: tempFile.part.fieldname,
+        originalname: tempFile.part.filename,
+        encoding: tempFile.part.encoding,
+        mimetype: tempFile.part.mimetype,
+        filename: path.basename(result.path),
         path: result.path,
+        url: result.url,
         size: result.size,
       };
     }

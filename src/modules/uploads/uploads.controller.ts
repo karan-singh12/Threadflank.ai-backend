@@ -20,12 +20,10 @@ export class UploadsController {
       throw new BadRequestException("No file uploaded");
     }
 
-    const relativeUrl = req.file.path.startsWith("/") ? req.file.path : `/${req.file.path}`;
-
     return {
       message: "File uploaded successfully",
       data: {
-        url: relativeUrl,
+        url: req.file.url,
         path: req.file.path,
         filename: req.file.filename,
       },
@@ -39,12 +37,10 @@ export class UploadsController {
       throw new BadRequestException("No file uploaded");
     }
 
-    const relativeUrl = req.file.path.startsWith("/") ? req.file.path : `/${req.file.path}`;
-
     return {
       message: "File uploaded successfully",
       data: {
-        url: relativeUrl,
+        url: req.file.url,
         path: req.file.path,
         filename: req.file.filename,
       },
