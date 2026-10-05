@@ -2,8 +2,9 @@ import { GarmentSlot } from './dto/tryon.dto';
 import { GroupDrapeDto, GroupPosture, OutfitPieceDto, PersonSpecDto, SceneSpecDto } from './dto/group-drape.dto';
 
 /**
- * Turns the Drape form (an array of people, each with a twin and outfit pieces) into
- * Gemini prompts. Pure functions so the wording can be unit-tested.
+ * Turns the Drape form (an array of people, each with a selfie, body details and outfit pieces)
+ * into Gemini prompts. Each person's image is a selfie: it gives the face only, and the body is
+ * drawn from their details. Pure functions so the wording can be unit-tested.
  *
  * A group is rendered in one request (`buildOnePassGroupPrompt`) when its images fit; larger groups use two passes:
  *  1. `buildPersonPrompt`: dress each twin alone on a plain backdrop.
@@ -130,17 +131,12 @@ export function buildPersonPrompt(person: PersonSpecDto, styling?: string, scene
         lines.push(line);
     }
 
-    const covered = new Set(pieces.map((p) => p.slot));
-    const keepsOwn = covered.has(GarmentSlot.DRESS) || (covered.has(GarmentSlot.TOP) && covered.has(GarmentSlot.BOTTOM))
-        ? 'For any part of the outfit not listed (such as footwear), choose simple items that suit the look.'
-        : 'Keep any clothing not replaced by the list above as it is in Image 1.';
-
     const prompt = [
-        `Virtual try-on photograph. Image 1 shows ${person.name}, ${describeBody(person)}.`,
-        `Dress this exact person in the following pieces:`,
+        `Virtual try-on photograph. Image 1 is a selfie of ${person.name}: use it only for their face, facial features, hairstyle, hair colour and skin tone.`,
+        `Create a full-body photo of this exact person as ${describeBody(person)}, with natural proportions for that height and build, dressed in the following pieces:`,
         ...lines,
-        keepsOwn,
-        'Keep their face, facial features, expression, hairstyle, hair colour, skin tone, body shape and proportions identical to Image 1. This must be clearly the same person.',
+        'For any part of the outfit not listed (such as footwear), choose simple items that suit the look.',
+        'Their face must match the selfie exactly, so they are clearly the same person. Do not copy the selfie’s framing, background or clothing.',
         person.notes?.trim() ? `Styling for ${person.name}: ${person.notes.trim()}.` : '',
         styling?.trim() ? `Overall styling: ${styling.trim()}.` : '',
         scene
@@ -185,14 +181,11 @@ export function buildOnePassGroupPrompt(dto: GroupDrapeDto): PromptJob {
             }
             return piece.drape?.trim() ? `${line}. ${piece.drape.trim()}` : line;
         });
-        const covered = new Set(normalisePieces(person.outfit).map((p) => p.slot));
         const rest = pieces.length === 0
-            ? 'keeps the clothes they wear in their image'
-            : covered.has(GarmentSlot.DRESS) || (covered.has(GarmentSlot.TOP) && covered.has(GarmentSlot.BOTTOM))
-              ? 'anything not listed (such as footwear) is simple and suits the look'
-              : 'any clothing not listed stays as in their image';
+            ? 'wears simple, everyday clothes that suit the group'
+            : 'anything not listed (such as footwear) is simple and suits the look';
         return [
-            `Person ${i + 1}: ${person.name}${relation}, ${describeBody(person)}. Face, hair, skin tone and body exactly as in Image ${twinImage}.`,
+            `Person ${i + 1}: ${person.name}${relation}, ${describeBody(person)}. Image ${twinImage} is their selfie: their face, hair and skin tone exactly as in it; draw the full body from these details.`,
             pieces.length ? `  Wears: ${pieces.join('; ')}. Reproduce each piece exactly: colour, print, fabric, texture, neckline, sleeves, length and fit; ${rest}.` : `  ${rest[0].toUpperCase()}${rest.slice(1)}.`,
             person.notes?.trim() ? `  Styling for ${person.name}: ${person.notes.trim()}.` : '',
         ]
@@ -206,7 +199,7 @@ export function buildOnePassGroupPrompt(dto: GroupDrapeDto): PromptJob {
     const prompt = [
         `Create one photorealistic group photograph of exactly ${people.length} people together in the same place, captured in a single shot. From left to right:`,
         ...roster,
-        'Each person must clearly be the same person as in their own image. Every garment goes only on the person it is listed for: never swap or blend clothes between people, and never add or remove anyone.',
+        'Each person must clearly be the same person as in their own selfie (do not copy the selfies’ framing, backgrounds or clothing). Every garment goes only on the person it is listed for: never swap or blend clothes between people, and never add or remove anyone.',
         POSTURE_PROMPTS[posture],
         heightRule,
         sceneRule(dto.scene, images),

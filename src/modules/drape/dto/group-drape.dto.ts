@@ -14,8 +14,8 @@ import {
 } from 'class-validator';
 import { GarmentSlot } from './tryon.dto';
 
-/** You plus up to five Twin Circle members. */
-export const GROUP_MAX_PEOPLE = 6;
+/** People in one look: you plus one Twin Circle member. */
+export const GROUP_MAX_PEOPLE = 2;
 export const MAX_PIECES_PER_PERSON = 8;
 
 /** Group postures the form offers; `auto` derives one from the people's relations. */

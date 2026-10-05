@@ -56,7 +56,8 @@ describe('drape prompt builder', () => {
             }),
         );
         expect(job.images).toEqual(['data:image/png;base64,TWIN', 'top.png', 'shoes.png']);
-        expect(job.prompt).toContain('Image 1 shows Karan, a 28-year-old man, 178 cm tall');
+        expect(job.prompt).toContain('Image 1 is a selfie of Karan');
+        expect(job.prompt).toContain('as a 28-year-old man, 178 cm tall');
         expect(job.prompt).toContain('Top "Linen shirt" (Image 2)');
         expect(job.prompt).toContain('Footwear (Image 3)');
         expect(job.prompt).toContain('white churidar');
@@ -85,11 +86,11 @@ describe('drape prompt builder', () => {
         const job = buildOnePassGroupPrompt(dto);
         expect(job.images).toEqual(['data:image/png;base64,TWIN', 'kurta.png', 'priya.png', 'saree.png', 'scene.jpg']);
         expect(job.prompt).toContain('Person 1: Karan');
-        expect(job.prompt).toContain('exactly as in Image 1');
+        expect(job.prompt).toContain('Image 1 is their selfie');
         expect(job.prompt).toContain('Top "Linen kurta" from Image 2');
         expect(job.prompt).toContain('tan juttis');
         expect(job.prompt).toContain('Person 2: Priya (partner)');
-        expect(job.prompt).toContain('exactly as in Image 3');
+        expect(job.prompt).toContain('Image 3 is their selfie');
         expect(job.prompt).toContain('Full outfit from Image 4');
         expect(job.prompt).toContain('Image 5 (Haveli courtyard)');
         expect(job.prompt).toContain('They are a couple');
