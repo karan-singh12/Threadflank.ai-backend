@@ -20,6 +20,7 @@ import { RedisIoAdapter } from "./common/adapters/redis-io.adapter";
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import * as path from "path";
+import { Readable } from "stream";
 
 async function bootstrap() {
   console.log("[bootstrap] Starting NestFactory.create...");
@@ -37,6 +38,18 @@ async function bootstrap() {
   if (isRedisConnected) {
     app.useWebSocketAdapter(redisIoAdapter);
   }
+
+  // Razorpay signs the exact webhook body, so keep the raw bytes for that one route
+  // (as req.rawBody) before Fastify parses the JSON.
+  app.getHttpAdapter().getInstance().addHook("preParsing", async (request: any, _reply: any, payload: any) => {
+    if (!request.url?.startsWith("/api/billing/razorpay/webhook")) return payload;
+    const chunks: Buffer[] = [];
+    for await (const chunk of payload) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    request.rawBody = Buffer.concat(chunks);
+    const replay = Readable.from([request.rawBody]) as Readable & { receivedEncodedLength?: number };
+    replay.receivedEncodedLength = request.rawBody.length;
+    return replay;
+  });
 
   // Register fastify multipart parser
   await app.register(multipart, {

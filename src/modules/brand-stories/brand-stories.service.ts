@@ -65,18 +65,25 @@ export class BrandStoriesService {
     return { stories, meta: buildPaginationMeta(total, page, limit) };
   }
 
-  /** Active (non-expired) stories, grouped implicitly by brand on the client. */
-  async findAllPublic(filter: BrandStoryFilterDto) {
+  /**
+   * Active (non-expired) stories, oldest first so a brand's stories play in order; the client
+   * groups them by brand. With a signed-in viewer, each says whether they've seen it.
+   */
+  async findAllPublic(filter: BrandStoryFilterDto, viewerId?: string) {
     const where: any = { isDeleted: false, expiresAt: { gt: new Date() } };
     if (filter.brandId) where.brandId = filter.brandId;
 
-    const stories = await this.prisma.brandStory.findMany({
+    const rows = await this.prisma.brandStory.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
-      include: { brand: { select: { id: true, name: true, slug: true, logoUrl: true, isVerified: true } } },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        brand: { select: { id: true, name: true, slug: true, logoUrl: true, isVerified: true } },
+        ...(viewerId ? { views: { where: { userId: viewerId }, select: { id: true } } } : {}),
+      },
       take: 200,
     });
 
+    const stories = rows.map(({ views, ...story }: any) => ({ ...story, viewed: Boolean(views?.length) }));
     return { stories };
   }
 
@@ -89,17 +96,22 @@ export class BrandStoriesService {
     return story;
   }
 
+  /** Counts one view per person. Returns the story's view count. */
   async recordView(id: string, userId: string) {
     const story = await this.findOneActive(id);
     const existing = await this.prisma.brandStoryView.findUnique({ where: { storyId_userId: { storyId: id, userId } } });
-    if (existing) return story;
+    if (existing) return { viewsCount: story.viewsCount };
 
-    await this.prisma.$transaction([
-      this.prisma.brandStoryView.create({ data: { storyId: id, userId } }),
-      this.prisma.brandStory.update({ where: { id }, data: { viewsCount: { increment: 1 } } }),
-    ]);
-
-    return story;
+    try {
+      const [, updated] = await this.prisma.$transaction([
+        this.prisma.brandStoryView.create({ data: { storyId: id, userId } }),
+        this.prisma.brandStory.update({ where: { id }, data: { viewsCount: { increment: 1 } } }),
+      ]);
+      return { viewsCount: updated.viewsCount };
+    } catch {
+      // A second tab recorded the same view first.
+      return { viewsCount: story.viewsCount };
+    }
   }
 
   async remove(id: string, admin: AuthenticatedAdmin) {

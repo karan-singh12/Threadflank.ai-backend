@@ -16,12 +16,13 @@ export class BrandStoriesPublicController {
   @Get()
   @UseGuards(OptionalAuthGuard)
   @ApiOperation({ summary: 'Active brand stories carousel' })
-  async findAll(@Query() filter: BrandStoryFilterDto) {
-    const result = await this.brandStoriesService.findAllPublic(filter);
+  async findAll(@Query() filter: BrandStoryFilterDto, @Req() req: any) {
+    const result = await this.brandStoriesService.findAllPublic(filter, req.user?.userId);
     return { message: MESSAGES.brandStories.listFetched, data: result.stories };
   }
 
   @Post(':id/view')
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Record a view of a brand story' })
   async view(@Param('id') id: string, @Req() req: any) {
     const story = await this.brandStoriesService.recordView(id, req.user.userId);

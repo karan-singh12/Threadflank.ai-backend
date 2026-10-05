@@ -89,18 +89,78 @@ export class BrandPostsService {
     if (filter.status) where.status = filter.status;
     if (filter.category) where.category = filter.category;
 
-    const [posts, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.brandPost.findMany({
         where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { brand: { select: { id: true, name: true, slug: true, logoUrl: true } } },
+        include: {
+          brand: { select: { id: true, name: true, slug: true, logoUrl: true } },
+          _count: { select: { likes: true, comments: true } },
+        },
       }),
       this.prisma.brandPost.count({ where }),
     ]);
 
+    // Saves are Saved looks made from the post's image (see toggleSave).
+    const images = rows.map((p) => firstImage(p.images)).filter((i): i is string => Boolean(i));
+    const saves = images.length
+      ? await this.prisma.look.groupBy({ by: ['image'], where: { image: { in: images } }, _count: { _all: true } })
+      : [];
+    const savesByImage = new Map(saves.map((s) => [s.image, s._count._all]));
+    const posts = rows.map(({ _count, ...post }) => ({
+      ...post,
+      engagement: {
+        likes: _count.likes,
+        comments: _count.comments,
+        saves: savesByImage.get(firstImage(post.images) ?? '') ?? 0,
+        shares: post.sharesCount,
+      },
+    }));
+
     return { posts, meta: buildPaginationMeta(total, page, limit) };
+  }
+
+  /** Counts a share from the app. */
+  async recordShare(postId: string) {
+    await this.findPublished(postId);
+    const post = await this.prisma.brandPost.update({ where: { id: postId }, data: { sharesCount: { increment: 1 } }, select: { sharesCount: true } });
+    return { sharesCount: post.sharesCount };
+  }
+
+  /** Comments on a post for moderation, newest first, with each author's email. */
+  async adminListComments(postId: string, admin: AuthenticatedAdmin, page = 1, limit = 50) {
+    const post = await this.findOne(postId);
+    await this.brandAccess.assertAccess(admin, post.brandId);
+    const take = Math.min(limit, 100);
+    const [comments, total] = await Promise.all([
+      this.prisma.brandPostComment.findMany({ where: { postId }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * take, take }),
+      this.prisma.brandPostComment.count({ where: { postId } }),
+    ]);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(comments.map((c) => c.userId))] } },
+      select: { id: true, username: true, email: true, avatar: true },
+    });
+    const byId = new Map(users.map((u) => [u.id, u]));
+    return { comments: comments.map((c) => ({ ...c, user: byId.get(c.userId) ?? null })), meta: buildPaginationMeta(total, page, take) };
+  }
+
+  /** Removes any comment on a post the admin can manage. */
+  async adminDeleteComment(postId: string, commentId: string, admin: AuthenticatedAdmin) {
+    const post = await this.findOne(postId);
+    await this.brandAccess.assertAccess(admin, post.brandId);
+    const comment = await this.prisma.brandPostComment.findFirst({ where: { id: commentId, postId } });
+    if (!comment) throw new NotFoundException('Comment not found');
+    await this.prisma.brandPostComment.delete({ where: { id: commentId } });
+    await this.audit.log({
+      adminUserId: admin.adminUserId,
+      action: 'BRAND_POST_COMMENT_DELETED',
+      entityType: 'BrandPostComment',
+      entityId: commentId,
+      metadata: { postId, userId: comment.userId, content: comment.content.slice(0, 200) },
+    });
+    return { deleted: true, commentsCount: await this.prisma.brandPostComment.count({ where: { postId } }) };
   }
 
   async findAllPublic(filter: BrandPostFilterDto, userId?: string) {

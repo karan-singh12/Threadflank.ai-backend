@@ -5,7 +5,7 @@ import { ImageProviderService } from '../../shared/image-provider/image-provider
 import { IStorageProvider, STORAGE_PROVIDER } from '../../shared/storage/storage.interface';
 import { downloadStored } from '../../shared/storage/r2-objects';
 import { AspectRatio, ImageResult } from '../../shared/image-provider/image-provider.interface';
-import { buildGroupPrompt, buildPersonPrompt, normalisePieces, resolvePosture } from './drape-prompt.builder';
+import { buildGroupPrompt, buildOnePassGroupPrompt, buildPersonPrompt, groupImageCount, normalisePieces, resolvePosture } from './drape-prompt.builder';
 import { AnimateDto } from './dto/animate.dto';
 import { GroupDrapeDto } from './dto/group-drape.dto';
 import { LookEditDto, MakeupOptions } from './dto/look-edit.dto';
@@ -164,11 +164,13 @@ export class DrapeService {
     }
 
     /**
-     * Drape for one or more people. Pass 1 dresses each person's twin in all of their pieces
-     * (in parallel); a single person is placed straight into the scene in this pass. For a group,
-     * pass 2 composes everyone into one photo, posed for their relation and placed in the scene. Both passes use Gemini, the engine that reads every
-     * reference image. If composing fails, each person's render is still returned
-     * so the client can fall back to its side-by-side collage.
+     * Drape for one or more people, with Gemini (the engine that reads every reference image).
+     *
+     * - One person: one request, dressed and placed in the scene.
+     * - A group whose images fit one request (GEMINI_GROUP_MAX_IMAGES, default 14): one request
+     *   with every twin, every person's pieces and the scene, posed for their relation.
+     * - A larger group: pass 1 dresses each twin separately, pass 2 composes them. If composing
+     *   fails, each person's render comes back so the client can collage them.
      */
     async processGroup(userId: string, dto: GroupDrapeDto): Promise<GroupDrapeResult> {
         if (!dto.people.some((p) => normalisePieces(p.outfit).length > 0)) {
@@ -176,6 +178,11 @@ export class DrapeService {
         }
 
         const stamp = Date.now();
+        const maxImages = Number(process.env.GEMINI_GROUP_MAX_IMAGES) || 14;
+        if (dto.people.length > 1 && groupImageCount(dto) <= maxImages) {
+            return this.processGroupInOneRequest(userId, dto, stamp);
+        }
+
         const renders = await Promise.allSettled(
             dto.people.map(async (person) => {
                 if (normalisePieces(person.outfit).length === 0) return null;
@@ -235,6 +242,23 @@ export class DrapeService {
             this.logger.warn(`Group composition failed, returning individual renders: ${err}`);
             return { imageUrl: null, composed: false, posture, people, composeError: err instanceof Error ? err.message : String(err) };
         }
+    }
+
+    /** The whole group in a single Gemini request (see buildOnePassGroupPrompt). */
+    private async processGroupInOneRequest(userId: string, dto: GroupDrapeDto, stamp: number): Promise<GroupDrapeResult> {
+        const posture = resolvePosture(dto.people, dto.posture ?? 'auto');
+        const job = buildOnePassGroupPrompt(dto);
+        const group = await this.imageProvider.generate({
+            ...job,
+            aspectRatio: groupAspect(dto.people.length),
+            engines: ['gemini'],
+            geminiModel: process.env.GEMINI_GROUP_MODEL?.trim() || undefined,
+        });
+        const imageUrl = await this.saveImage(group.url, `drape-group-${userId}-${stamp}.png`);
+        const slots = Array.from(new Set(dto.people.flatMap((p) => normalisePieces(p.outfit).map((o) => o.slot))));
+        const record = await this.recordResult(userId, imageUrl, slots, group.provider, group.model);
+        const people: GroupPersonResult[] = dto.people.map((p) => ({ ref: p.ref, name: p.name, imageUrl: p.twinImage, dressed: normalisePieces(p.outfit).length > 0 }));
+        return { imageUrl, composed: true, posture, people, provider: group.provider, model: group.model, resultId: record.id };
     }
 
     /**

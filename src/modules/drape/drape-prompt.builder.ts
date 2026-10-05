@@ -5,7 +5,7 @@ import { GroupDrapeDto, GroupPosture, OutfitPieceDto, PersonSpecDto, SceneSpecDt
  * Turns the Drape form (an array of people, each with a twin and outfit pieces) into
  * Gemini prompts. Pure functions so the wording can be unit-tested.
  *
- * Rendering runs in two passes:
+ * A group is rendered in one request (`buildOnePassGroupPrompt`) when its images fit; larger groups use two passes:
  *  1. `buildPersonPrompt`: dress each twin alone on a plain backdrop.
  *  2. `buildGroupPrompt`: compose the dressed people into one photo, posed for their relation.
  */
@@ -146,6 +146,72 @@ export function buildPersonPrompt(person: PersonSpecDto, styling?: string, scene
         scene
             ? `${sceneRule(scene, images)} Output one full-body photo of this person alone: head to feet in frame, standing naturally, lit by the scene's own light as one coherent photograph. Photorealistic, high detail, with no text or watermark.`
             : 'Output one full-body photo of this person alone: head to feet in frame, standing naturally facing the camera, on a plain light-grey seamless studio background with soft, even lighting. Photorealistic, high detail, with no text or watermark.',
+    ]
+        .filter(Boolean)
+        .join('\n');
+
+    return { prompt, images };
+}
+
+/** Every reference image a one-request group render sends: each twin, each photographed piece, and the scene. */
+export function groupImageCount(dto: GroupDrapeDto): number {
+    const pieces = dto.people.reduce((n, p) => n + normalisePieces(p.outfit).filter((o) => o.image).length, 0);
+    return dto.people.length + pieces + (dto.scene?.imageUrl ? 1 : 0);
+}
+
+/**
+ * The whole group in one request: each person's twin followed by their own outfit pieces,
+ * then the scene. The prompt lists every person (from the Drape form's array of people) with
+ * the image numbers that belong to them, so each piece lands on the right person.
+ */
+export function buildOnePassGroupPrompt(dto: GroupDrapeDto): PromptJob {
+    const people = dto.people;
+    const images: string[] = [];
+    const posture = resolvePosture(people, dto.posture ?? 'auto') ?? 'friends';
+
+    const roster = people.map((person, i) => {
+        images.push(person.twinImage);
+        const twinImage = images.length;
+        const relation = isSelf(person) ? '' : person.relation ? ` (${person.relation.toLowerCase()})` : '';
+        const pieces = normalisePieces(person.outfit).map((piece) => {
+            const label = piece.label ? ` "${piece.label}"` : '';
+            let line: string;
+            if (piece.image) {
+                images.push(piece.image);
+                line = `${SLOT_NAMES[piece.slot]}${label} from Image ${images.length}, ${SLOT_WEAR[piece.slot]}`;
+                if (piece.description?.trim()) line += ` (${piece.description.trim()})`;
+            } else {
+                line = `${SLOT_NAMES[piece.slot]}${label}, ${SLOT_WEAR[piece.slot]}: ${piece.description!.trim()}`;
+            }
+            return piece.drape?.trim() ? `${line}. ${piece.drape.trim()}` : line;
+        });
+        const covered = new Set(normalisePieces(person.outfit).map((p) => p.slot));
+        const rest = pieces.length === 0
+            ? 'keeps the clothes they wear in their image'
+            : covered.has(GarmentSlot.DRESS) || (covered.has(GarmentSlot.TOP) && covered.has(GarmentSlot.BOTTOM))
+              ? 'anything not listed (such as footwear) is simple and suits the look'
+              : 'any clothing not listed stays as in their image';
+        return [
+            `Person ${i + 1}: ${person.name}${relation}, ${describeBody(person)}. Face, hair, skin tone and body exactly as in Image ${twinImage}.`,
+            pieces.length ? `  Wears: ${pieces.join('; ')}. Reproduce each piece exactly: colour, print, fabric, texture, neckline, sleeves, length and fit; ${rest}.` : `  ${rest[0].toUpperCase()}${rest.slice(1)}.`,
+            person.notes?.trim() ? `  Styling for ${person.name}: ${person.notes.trim()}.` : '',
+        ]
+            .filter(Boolean)
+            .join('\n');
+    });
+
+    const heights = people.filter((p) => p.body?.heightCm);
+    const heightRule = heights.length >= 2 ? 'Keep their real relative heights from the details above, so taller people stand taller in the frame.' : '';
+
+    const prompt = [
+        `Create one photorealistic group photograph of exactly ${people.length} people together in the same place, captured in a single shot. From left to right:`,
+        ...roster,
+        'Each person must clearly be the same person as in their own image. Every garment goes only on the person it is listed for: never swap or blend clothes between people, and never add or remove anyone.',
+        POSTURE_PROMPTS[posture],
+        heightRule,
+        sceneRule(dto.scene, images),
+        'Light everyone with the same light source, as one coherent photograph rather than a collage. Show full bodies head to feet, shot at eye level with a 35mm lens and a fashion-editorial finish, with no text or watermark.',
+        dto.styling?.trim() ? `Styling notes: ${dto.styling.trim()}.` : '',
     ]
         .filter(Boolean)
         .join('\n');

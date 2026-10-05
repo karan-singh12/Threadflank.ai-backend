@@ -43,6 +43,10 @@ model User {
   wardrobeItems       WardrobeItem[]
   looks               Look[]
   twinProfile         TwinProfile?
+
+  // Image credits: each generated image spends credits; new accounts get the free amount once.
+  creditBalance        Int                @default(0)
+  freeCreditsGrantedAt DateTime?
 }
 
 // ─── 1:1 Conversations ────────────────────────────────────────────────────────
@@ -492,6 +496,8 @@ model BrandPost {
   publishedAt       DateTime?
   failureReason     String?
   isDeleted         Boolean       @default(false)
+  /// Times someone shared the post from the app (card, WhatsApp or link).
+  sharesCount       Int           @default(0)
   createdByAdminId  String?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -998,3 +1004,78 @@ model DrapedResult {
   @@index([userId, createdAt])
 }
 
+
+// ─── Credits & payments ───────────────────────────────────────────────────────
+
+/// Single row (id "default"), edited from the admin panel.
+model BillingSettings {
+  id          String   @id @default("default")
+  /// Credits every account gets once, for free.
+  freeCredits Int      @default(3)
+  /// Credits one motion video costs (an image always costs 1).
+  videoCost   Int      @default(5)
+  currency    String   @default("INR")
+  updatedAt   DateTime @updatedAt
+}
+
+/// A one-time credit pack, e.g. ₹49 for 15 images.
+model CreditPack {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  /// Price in paise (₹49 = 4900).
+  pricePaise  Int
+  credits     Int
+  isActive    Boolean   @default(true)
+  isFeatured  Boolean   @default(false)
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  payments    Payment[]
+}
+
+enum PaymentStatus {
+  CREATED
+  PAID
+  FAILED
+}
+
+/// One checkout: a Razorpay order, and its payment once captured.
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  packId            String?
+  credits           Int
+  /// Amount in paise.
+  amount            Int
+  currency          String        @default("INR")
+  provider          String        @default("razorpay")
+  providerOrderId   String        @unique
+  providerPaymentId String?       @unique
+  status            PaymentStatus @default(CREATED)
+  failureReason     String?
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  pack CreditPack? @relation(fields: [packId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// Every change to a user's credit balance.
+model CreditTransaction {
+  id           String   @id @default(cuid())
+  userId       String
+  /// Positive for grants and refunds, negative for spending.
+  delta        Int
+  balanceAfter Int
+  /// FREE | PURCHASE | DRAPE | LOOK_EDIT | VIDEO | REFUND | ADMIN
+  reason       String
+  refId        String?
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

@@ -4,6 +4,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { CutoutModule } from '../../shared/cutout/cutout.module';
 import { ImageProviderModule } from '../../shared/image-provider/image-provider.module';
 import { StorageModule } from '../../shared/storage/storage.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { DrapeController } from './drape.controller';
 import { DrapeService } from './drape.service';
 
@@ -14,6 +15,7 @@ import { DrapeService } from './drape.service';
         ImageProviderModule,
         StorageModule.register(),
         CutoutModule,
+        PaymentsModule,
     ],
     controllers: [DrapeController],
     providers: [DrapeService],

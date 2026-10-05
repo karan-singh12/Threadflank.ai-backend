@@ -70,6 +70,19 @@ export class BrandPostsController {
     return { message: MESSAGES.brandPosts.captionGenerated, data: post };
   }
 
+  @Get(':id/comments')
+  @ApiOperation({ summary: 'Comments on a post, for moderation' })
+  async listComments(@Param('id') id: string, @Query('page') page: string | undefined, @CurrentAdmin() admin: AuthenticatedAdmin) {
+    const result = await this.brandPostsService.adminListComments(id, admin, Math.max(1, Number(page) || 1));
+    return { message: 'Comments fetched', data: result.comments, meta: result.meta };
+  }
+
+  @Delete(':id/comments/:commentId')
+  @ApiOperation({ summary: 'Remove a comment (moderation)' })
+  async deleteComment(@Param('id') id: string, @Param('commentId') commentId: string, @CurrentAdmin() admin: AuthenticatedAdmin) {
+    return { message: 'Comment removed', data: await this.brandPostsService.adminDeleteComment(id, commentId, admin) };
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Soft-delete a brand post' })
   async remove(@Param('id') id: string, @CurrentAdmin() admin: AuthenticatedAdmin) {

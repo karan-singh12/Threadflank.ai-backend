@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Delete, Param, Query, Body, UseGuards, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BrandPostsService } from './brand-posts.service';
 import { BrandPostFilterDto } from './dto/brand-post-filter.dto';
@@ -45,6 +46,14 @@ export class BrandPostsPublicController {
   async toggleSave(@Param('id') id: string, @Req() req: any) {
     const result = await this.brandPostsService.toggleSave(id, req.user.userId);
     return { message: result.saved ? 'Saved to your looks' : 'Removed from your looks', data: result };
+  }
+
+  @Post(':id/share')
+  @UseGuards(OptionalAuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Count a share of a brand post' })
+  async share(@Param('id') id: string) {
+    return { message: 'Share recorded', data: await this.brandPostsService.recordShare(id) };
   }
 
   @Get(':id/comments')

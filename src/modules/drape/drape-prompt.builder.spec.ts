@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { GarmentSlot } from './dto/tryon.dto';
 import { GroupDrapeDto, PersonSpecDto } from './dto/group-drape.dto';
-import { buildGroupPrompt, buildPersonPrompt, normalisePieces, resolvePosture } from './drape-prompt.builder';
+import { buildGroupPrompt, buildOnePassGroupPrompt, buildPersonPrompt, groupImageCount, normalisePieces, resolvePosture } from './drape-prompt.builder';
 
 const person = (over: Partial<PersonSpecDto> = {}): PersonSpecDto => ({
     ref: 'me',
@@ -71,6 +71,28 @@ describe('drape prompt builder', () => {
         expect(inScene.images).toEqual(['data:image/png;base64,TWIN', 'top.png', 'terrace.jpg']);
         expect(inScene.prompt).toContain('Image 3 (Sunlit Terrace)');
         expect(inScene.prompt).not.toContain('light-grey seamless');
+    });
+
+    it('renders the whole group in one request, each piece numbered under its own person', () => {
+        const dto: GroupDrapeDto = {
+            people: [
+                person({ outfit: [{ slot: GarmentSlot.TOP, image: 'kurta.png', label: 'Linen kurta' }, { slot: GarmentSlot.SHOES, description: 'tan juttis' }] }),
+                person({ ref: 'a', name: 'Priya', relation: 'Partner', twinImage: 'priya.png', body: { gender: 'female', heightCm: 165 }, outfit: [{ slot: GarmentSlot.DRESS, image: 'saree.png' }] }),
+            ],
+            scene: { name: 'Haveli courtyard', imageUrl: 'scene.jpg' },
+        };
+        expect(groupImageCount(dto)).toBe(5);
+        const job = buildOnePassGroupPrompt(dto);
+        expect(job.images).toEqual(['data:image/png;base64,TWIN', 'kurta.png', 'priya.png', 'saree.png', 'scene.jpg']);
+        expect(job.prompt).toContain('Person 1: Karan');
+        expect(job.prompt).toContain('exactly as in Image 1');
+        expect(job.prompt).toContain('Top "Linen kurta" from Image 2');
+        expect(job.prompt).toContain('tan juttis');
+        expect(job.prompt).toContain('Person 2: Priya (partner)');
+        expect(job.prompt).toContain('exactly as in Image 3');
+        expect(job.prompt).toContain('Full outfit from Image 4');
+        expect(job.prompt).toContain('Image 5 (Haveli courtyard)');
+        expect(job.prompt).toContain('They are a couple');
     });
 
     it('composes the group with the posture for their relation and the scene image last', () => {
