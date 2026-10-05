@@ -5,7 +5,7 @@
  * → Gemini-fallback chain in one place.
  */
 
-export type AspectRatio = '3:4' | '1:1' | '4:3' | '9:16';
+export type AspectRatio = '3:4' | '1:1' | '4:3' | '9:16' | '16:9';
 
 export interface ImageJob {
     /**
@@ -21,6 +21,16 @@ export interface ImageJob {
     images?: string[];
 
     aspectRatio?: AspectRatio;
+
+    /**
+     * Restricts which engines may run this job. Multi-image jobs (try-on with several
+     * garments, group composition) need an engine that reads every reference image,
+     * so they pass ['gemini'] instead of falling back to a text-only model.
+     */
+    engines?: ('replicate' | 'gemini')[];
+
+    /** Gemini model override for this job, tried before the configured default. */
+    geminiModel?: string;
 
     /**
      * Replicate-specific overrides. When set, the ReplicateImageProvider calls

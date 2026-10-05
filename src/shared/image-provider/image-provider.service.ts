@@ -48,8 +48,15 @@ export class ImageProviderService {
      */
     async generate(job: ImageJob): Promise<ImageResult> {
         const order = this.getEngineOrder();
-        const configuredEngines = order.filter((engine) => this.getProvider(engine).isConfigured());
+        const configuredEngines = order.filter(
+            (engine) => this.getProvider(engine).isConfigured() && (!job.engines || job.engines.includes(engine)),
+        );
 
+        if (configuredEngines.length === 0 && job.engines) {
+            throw new InternalServerErrorException(
+                `This render needs one of these image engines: ${job.engines.join(', ')}. Configure its API key in the backend environment.`,
+            );
+        }
         if (configuredEngines.length === 0) {
             throw new InternalServerErrorException(
                 'No image generation provider is configured. Please provide GEMINI_API_KEY or REPLICATE_API_TOKEN in backend environment variables.',

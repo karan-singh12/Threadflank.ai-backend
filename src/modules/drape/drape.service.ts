@@ -3,9 +3,41 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CutoutService } from '../../shared/cutout/cutout.service';
 import { ImageProviderService } from '../../shared/image-provider/image-provider.service';
 import { IStorageProvider, STORAGE_PROVIDER } from '../../shared/storage/storage.interface';
+import { downloadStored } from '../../shared/storage/r2-objects';
+import { AspectRatio, ImageResult } from '../../shared/image-provider/image-provider.interface';
+import { buildGroupPrompt, buildPersonPrompt, normalisePieces, resolvePosture } from './drape-prompt.builder';
 import { AnimateDto } from './dto/animate.dto';
+import { GroupDrapeDto } from './dto/group-drape.dto';
 import { LookEditDto, MakeupOptions } from './dto/look-edit.dto';
 import { GarmentSlot, SlotItem, TryOnRequestDto } from './dto/tryon.dto';
+
+export type GroupPersonResult = {
+    ref: string;
+    name: string;
+    /** This person's own render, or their twin when they had no outfit or their render failed. */
+    imageUrl: string;
+    dressed: boolean;
+    error?: string;
+};
+
+export type GroupDrapeResult = {
+    /** The final photo: the composed group, or the single person's render. Null if composing failed. */
+    imageUrl: string | null;
+    composed: boolean;
+    posture: string | null;
+    people: GroupPersonResult[];
+    provider?: string;
+    model?: string;
+    resultId?: string;
+    composeError?: string;
+};
+
+/** Wider frames as the group grows, so everyone fits head to toe. */
+function groupAspect(count: number): AspectRatio {
+    if (count <= 2) return '3:4';
+    if (count <= 4) return '4:3';
+    return '16:9';
+}
 
 const POSE_PROMPTS: Record<string, string> = {
     front: 'standing straight and facing the camera, arms relaxed',
@@ -132,6 +164,80 @@ export class DrapeService {
     }
 
     /**
+     * Drape for one or more people. Pass 1 dresses each person's twin in all of their pieces
+     * (in parallel); a single person is placed straight into the scene in this pass. For a group,
+     * pass 2 composes everyone into one photo, posed for their relation and placed in the scene. Both passes use Gemini, the engine that reads every
+     * reference image. If composing fails, each person's render is still returned
+     * so the client can fall back to its side-by-side collage.
+     */
+    async processGroup(userId: string, dto: GroupDrapeDto): Promise<GroupDrapeResult> {
+        if (!dto.people.some((p) => normalisePieces(p.outfit).length > 0)) {
+            throw new BadRequestException('Give at least one person an outfit.');
+        }
+
+        const stamp = Date.now();
+        const renders = await Promise.allSettled(
+            dto.people.map(async (person) => {
+                if (normalisePieces(person.outfit).length === 0) return null;
+                const single = dto.people.length === 1;
+                const job = single ? buildPersonPrompt(person, dto.styling, dto.scene) : buildPersonPrompt(person);
+                return this.imageProvider.generate({ ...job, aspectRatio: '3:4', engines: ['gemini'] });
+            }),
+        );
+
+        const failures = renders.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        const attempted = dto.people.filter((p) => normalisePieces(p.outfit).length > 0).length;
+        if (failures.length === attempted) {
+            const reason = failures[0].reason;
+            throw new BadRequestException(reason instanceof Error ? reason.message : String(reason));
+        }
+
+        // In-memory images feed pass 2; stored URLs go back to the client.
+        const dressed = dto.people.map((p, i) => {
+            const r = renders[i];
+            return r.status === 'fulfilled' && r.value ? r.value.url : p.twinImage;
+        });
+        const people: GroupPersonResult[] = await Promise.all(
+            dto.people.map(async (p, i) => {
+                const r = renders[i];
+                if (r.status === 'rejected') {
+                    return { ref: p.ref, name: p.name, imageUrl: p.twinImage, dressed: false, error: String(r.reason?.message ?? r.reason) };
+                }
+                if (!r.value) return { ref: p.ref, name: p.name, imageUrl: p.twinImage, dressed: false };
+                const imageUrl = await this.saveImage(r.value.url, `drape-${userId}-${stamp}-${i}.png`);
+                return { ref: p.ref, name: p.name, imageUrl, dressed: true };
+            }),
+        );
+
+        const firstRender = renders
+            .map((r) => (r.status === 'fulfilled' ? r.value : null))
+            .find((v): v is ImageResult => Boolean(v));
+        const slots = Array.from(new Set(dto.people.flatMap((p) => normalisePieces(p.outfit).map((o) => o.slot))));
+
+        if (dto.people.length === 1) {
+            const record = await this.recordResult(userId, people[0].imageUrl, slots, firstRender!.provider, firstRender!.model);
+            return { imageUrl: people[0].imageUrl, composed: false, posture: null, people, provider: firstRender!.provider, model: firstRender!.model, resultId: record.id };
+        }
+
+        const posture = resolvePosture(dto.people, dto.posture ?? 'auto');
+        try {
+            const job = buildGroupPrompt(dto, dressed);
+            const group = await this.imageProvider.generate({
+                ...job,
+                aspectRatio: groupAspect(dto.people.length),
+                engines: ['gemini'],
+                geminiModel: process.env.GEMINI_GROUP_MODEL?.trim() || undefined,
+            });
+            const imageUrl = await this.saveImage(group.url, `drape-group-${userId}-${stamp}.png`);
+            const record = await this.recordResult(userId, imageUrl, slots, group.provider, group.model);
+            return { imageUrl, composed: true, posture, people, provider: group.provider, model: group.model, resultId: record.id };
+        } catch (err) {
+            this.logger.warn(`Group composition failed, returning individual renders: ${err}`);
+            return { imageUrl: null, composed: false, posture, people, composeError: err instanceof Error ? err.message : String(err) };
+        }
+    }
+
+    /**
      * Executes look edits (re-posing, cosmetics/makeup, or text describing).
      */
     async processLookEdit(
@@ -221,6 +327,16 @@ export class DrapeService {
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
+    private async saveImage(urlOrData: string, filename: string): Promise<string> {
+        const buffer = await this.urlOrDataToBuffer(urlOrData);
+        const saved = await this.storage.save({ buffer, filename, folder: 'drape-results', mimetype: 'image/png' });
+        return saved.url;
+    }
+
+    private recordResult(userId: string, imageUrl: string, slots: string[], provider: string, model: string) {
+        return this.prisma.drapedResult.create({ data: { userId, imageUrl, slots, provider, model } });
+    }
+
     private buildMakeupPrompt(makeup?: MakeupOptions): string[] {
         if (!makeup) return ['natural clean beauty makeup'];
         const parts: string[] = [];
@@ -243,10 +359,6 @@ export class DrapeService {
             const base64Data = urlOrData.split(',')[1] || urlOrData;
             return Buffer.from(base64Data, 'base64');
         }
-        const res = await fetch(urlOrData);
-        if (!res.ok) {
-            throw new Error(`Failed to download image from ${urlOrData} (HTTP ${res.status})`);
-        }
-        return Buffer.from(await res.arrayBuffer());
+        return (await downloadStored(urlOrData)).body;
     }
 }

@@ -25,7 +25,9 @@ async function bootstrap() {
   console.log("[bootstrap] Starting NestFactory.create...");
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter()
+    // Drape sends twins and garment photos inline as data URIs (up to 6 people with
+    // several pieces each), well past Fastify's 1 MB default.
+    new FastifyAdapter({ bodyLimit: 30 * 1024 * 1024 })
   );
   console.log("[bootstrap] NestFactory.create finished.");
 

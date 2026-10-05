@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ImageJob, ImageProvider, ImageResult } from './image-provider.interface';
+import { downloadStored } from '../storage/r2-objects';
 
 type Inline = { mimeType: string; data: string };
 
@@ -52,7 +53,9 @@ export class GeminiImageProvider implements ImageProvider {
 
         parts.push({ text: promptText });
 
-        const candidateModels = [this.model, 'gemini-2.5-flash-image', 'gemini-3.1-flash-image'];
+        const candidateModels = [job.geminiModel, this.model, 'gemini-2.5-flash-image', 'gemini-3.1-flash-image'].filter(
+            (m): m is string => Boolean(m),
+        );
         const uniqueModels = Array.from(new Set(candidateModels));
 
         let lastError: any = null;
@@ -141,16 +144,15 @@ export class GeminiImageProvider implements ImageProvider {
         const match = /^data:(image\/[a-z+.-]+);base64,(.+)$/i.exec(src);
         if (match) return { mimeType: match[1], data: match[2] };
 
-        // Public URL — download and encode
-        const res = await fetch(src, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OutfitChecker/1.0)' },
-            signal: AbortSignal.timeout(15_000),
-        });
-        if (!res.ok) {
-            throw new Error(`Gemini: could not download input image from ${src} (HTTP ${res.status})`);
+        // URL — download (our own R2 files with the bucket credentials) and encode
+        try {
+            const file = await downloadStored(src, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OutfitChecker/1.0)' },
+                signal: AbortSignal.timeout(15_000),
+            });
+            return { mimeType: file.contentType, data: file.body.toString('base64') };
+        } catch (err) {
+            throw new Error(`Gemini: could not download input image: ${err instanceof Error ? err.message : String(err)}`);
         }
-        const buffer = Buffer.from(await res.arrayBuffer());
-        const contentType = res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg';
-        return { mimeType: contentType, data: buffer.toString('base64') };
     }
 }

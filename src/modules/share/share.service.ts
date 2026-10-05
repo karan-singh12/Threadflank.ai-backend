@@ -29,7 +29,7 @@ export class ShareService {
   async resolve(token: string) {
     const share = await this.prisma.shareEvent.findUnique({
       where: { token },
-      include: { look: { select: { id: true, name: true, occasion: true, image: true, videoUrl: true, poseVariants: true, createdAt: true } } },
+      include: { look: { select: { id: true, name: true, occasion: true, image: true, pieces: true, videoUrl: true, poseVariants: true, createdAt: true } } },
     });
     if (!share) throw new NotFoundException("This share link has expired");
     const user = await this.prisma.user.findUnique({ where: { id: share.sharedBy }, select: { username: true, email: true, avatar: true } });

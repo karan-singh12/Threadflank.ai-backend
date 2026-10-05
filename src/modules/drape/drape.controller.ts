@@ -12,6 +12,7 @@ import {
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { DrapeService } from './drape.service';
 import { AnimateDto } from './dto/animate.dto';
+import { GroupDrapeDto } from './dto/group-drape.dto';
 import { LookEditDto } from './dto/look-edit.dto';
 import { TryOnRequestDto } from './dto/tryon.dto';
 
@@ -25,6 +26,15 @@ export class DrapeController {
     async tryon(@Req() req: any, @Body() dto: TryOnRequestDto) {
         const userId = req.user?.userId;
         const result = await this.drapeService.processTryOn(userId, dto);
+        return { success: true, ...result };
+    }
+
+    /** Multi-person Drape: every person's twin and outfit pieces in, one group photo out. */
+    @Post('group')
+    @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+    async group(@Req() req: any, @Body() dto: GroupDrapeDto) {
+        const userId = req.user?.userId;
+        const result = await this.drapeService.processGroup(userId, dto);
         return { success: true, ...result };
     }
 

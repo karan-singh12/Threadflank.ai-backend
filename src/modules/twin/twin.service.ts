@@ -2,6 +2,7 @@ import { Inject, Injectable, BadRequestException, InternalServerErrorException, 
 import { PrismaService } from "../../prisma/prisma.service";
 import { IStorageProvider, STORAGE_PROVIDER } from "../../shared/storage/storage.interface";
 import { ImageProviderService } from "../../shared/image-provider/image-provider.service";
+import { downloadStored } from "../../shared/storage/r2-objects";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -147,12 +148,8 @@ export class TwinService {
         photoDataUrl = input.photo;
       } else if (input.photo.startsWith("http://") || input.photo.startsWith("https://")) {
         try {
-          const fetched = await fetch(input.photo);
-          if (fetched.ok) {
-            const buf = Buffer.from(await fetched.arrayBuffer());
-            const mime = fetched.headers.get("content-type") || "image/jpeg";
-            photoDataUrl = `data:${mime};base64,${buf.toString("base64")}`;
-          }
+          const file = await downloadStored(input.photo);
+          photoDataUrl = `data:${file.contentType};base64,${file.body.toString("base64")}`;
         } catch (e) {
           this.logger.warn(`Failed to fetch photo URL: ${e}`);
         }
