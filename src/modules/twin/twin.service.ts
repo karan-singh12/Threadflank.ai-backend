@@ -171,10 +171,13 @@ export class TwinService {
 
     try {
       // Delegate generation directly to ImageProviderService (Gemini / Replicate)
+      // The twin is made once and then reused by every Drape render (which is where face
+      // consistency matters), so it uses the cheaper twin model, Lite by default.
       const genResult = await this.imageProvider.generate({
         prompt,
         images: photoDataUrl ? [photoDataUrl] : [],
         aspectRatio: "3:4",
+        geminiModel: process.env.GEMINI_TWIN_MODEL?.trim() || "gemini-3.1-flash-lite-image",
       });
 
       providerName = genResult.provider;
