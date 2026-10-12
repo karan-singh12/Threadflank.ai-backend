@@ -19,6 +19,7 @@
     "seed:demo": "ts-node --transpile-only prisma/seed-demo.ts",
     "seed:all": "npm run seed",
     "rag:ingest": "ts-node --transpile-only prisma/seed-rag.ts",
+    "rag:ingest:style": "ts-node --transpile-only prisma/seed-rag-style.ts",
     "db:up": "docker compose up -d --wait",
     "db:reset": "prisma db push --force-reset && npm run seed"
   },
