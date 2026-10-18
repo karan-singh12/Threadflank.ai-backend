@@ -204,6 +204,7 @@ export const MESSAGES = {
     notFound:     'User not found',
     suspended:    'User suspended successfully',
     unsuspended:  'User unsuspended successfully',
+    accountUpdated: 'User account updated successfully',
     alreadySuspended:   'User is already suspended',
     notSuspended:       'User is not currently suspended',
   },

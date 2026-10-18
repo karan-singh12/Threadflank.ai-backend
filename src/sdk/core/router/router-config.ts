@@ -7,7 +7,7 @@ const isProvider = (value: string | undefined): value is ProviderName =>
 export function modelForProvider(provider: ProviderName): string {
   switch (provider) {
     case 'gemini':
-      return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      return process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     case 'claude':
       return process.env.CLAUDE_MODEL || 'claude-opus-5';
     case 'openrouter':

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UpdateUserAccountDto } from './dto/update-user-account.dto';
 import { AdminPanelUserFilterDto } from './dto/user-filter.dto';
 import { MESSAGES } from '../../common/constants/messages.constant';
 import { APP_CONSTANTS } from '../../common/constants/app.constant';
@@ -44,7 +45,7 @@ export class AdminUsersService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        select: { id: true, email: true, username: true, role: true, isOnline: true, lastSeen: true, createdAt: true, avatar: true },
+        select: { id: true, email: true, username: true, role: true, accountType: true, creditBalance: true, isOnline: true, lastSeen: true, createdAt: true, avatar: true },
       }),
       this.prisma.user.count({ where }),
     ]);
@@ -60,7 +61,7 @@ export class AdminUsersService {
   async findOne(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, username: true, role: true, isOnline: true, lastSeen: true, createdAt: true, avatar: true, bio: true, phone: true, location: true },
+      select: { id: true, email: true, username: true, role: true, accountType: true, creditBalance: true, isOnline: true, lastSeen: true, createdAt: true, avatar: true, bio: true, phone: true, location: true },
     });
     if (!user) throw new NotFoundException(MESSAGES.adminUsers.notFound);
 
@@ -93,6 +94,20 @@ export class AdminUsersService {
     const updated = await this.prisma.userSuspension.update({ where: { id: active.id }, data: { liftedAt: new Date() } });
 
     await this.audit.log({ adminUserId: admin.adminUserId, action: 'USER_UNSUSPENDED', entityType: 'User', entityId: userId });
+    return updated;
+  }
+
+  async updateAccount(userId: string, dto: UpdateUserAccountDto, admin: AuthenticatedAdmin) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) throw new NotFoundException(MESSAGES.adminUsers.notFound);
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { accountType: dto.accountType },
+      select: { id: true, email: true, accountType: true, creditBalance: true },
+    });
+
+    await this.audit.log({ adminUserId: admin.adminUserId, action: 'USER_ACCOUNT_TYPE_UPDATED', entityType: 'User', entityId: userId, metadata: { accountType: dto.accountType } });
     return updated;
   }
 

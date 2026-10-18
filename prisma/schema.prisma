@@ -12,6 +12,7 @@ model User {
   username            String?            @unique
   password            String
   role                Role               @default(USER)
+  accountType         AccountType        @default(NORMAL)
   bio                 String?
   phone               String?
   location            String?
@@ -211,6 +212,12 @@ model TrafficLog {
 enum Role {
   USER
   ADMIN
+}
+
+/// NORMAL = free account; PURCHASED = has bought (or been given) paid access. Editable from the admin panel.
+enum AccountType {
+  NORMAL
+  PURCHASED
 }
 
 model Friendship {

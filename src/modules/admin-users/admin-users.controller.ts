@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Param, Query, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Query, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminUsersService } from './admin-users.service';
 import { AdminPanelUserFilterDto } from './dto/user-filter.dto';
+import { UpdateUserAccountDto } from './dto/update-user-account.dto';
 import { SuspendUserDto } from './dto/suspend-user.dto';
 import { AdminAuthGuard } from '../admin-auth/guards/admin-auth.guard';
 import { AdminRolesGuard } from '../admin-auth/guards/admin-roles.guard';
@@ -36,6 +37,13 @@ export class AdminUsersController {
   async findOne(@Param('id') id: string) {
     const user = await this.adminUsersService.findOne(id);
     return { message: MESSAGES.adminUsers.fetched, data: user };
+  }
+
+  @Put(':id/account')
+  @ApiOperation({ summary: 'Set a user account type (NORMAL or PURCHASED)' })
+  async updateAccount(@Param('id') id: string, @Body() dto: UpdateUserAccountDto, @CurrentAdmin() admin: AuthenticatedAdmin) {
+    const user = await this.adminUsersService.updateAccount(id, dto, admin);
+    return { message: MESSAGES.adminUsers.accountUpdated, data: user };
   }
 
   @Post(':id/suspend')

@@ -133,6 +133,7 @@ export class PaymentsService {
             const payment = await tx.payment.findUnique({ where: { providerOrderId: orderId } });
             if (payment && updated.count) {
                 await this.credits.grant(payment.userId, payment.credits, 'PURCHASE', { refId: payment.id, tx });
+                await tx.user.update({ where: { id: payment.userId }, data: { accountType: 'PURCHASED' } });
             }
             return payment;
         });
