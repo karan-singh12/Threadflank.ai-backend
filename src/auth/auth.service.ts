@@ -171,19 +171,18 @@ export class AuthService {
 
     const resetUrl = `${process.env.USER_PASSWORD_RESET_URL || 'http://localhost:3000/reset-password/'}${rawToken}`;
 
-    try {
-      await this.mailer.send({
+    // Sent in the background so a slow or failing mail server doesn't hold up the response (or
+    // reveal that the account exists). Failures are logged with the URL for local/dev testing.
+    this.mailer
+      .send({
         to: user.email,
         subject: 'Reset your Threadflank password',
         html: passwordResetEmailHtml({ name: user.username, url: resetUrl, expiresInMinutes: RESET_PASSWORD_EXPIRY_MIN }),
+      })
+      .catch((error) => {
+        this.logger.warn('AuthService', `Password reset email not sent (mailer not configured?) — dev link: ${resetUrl}`);
+        this.logger.error('AuthService', 'Failed to send password reset email', error);
       });
-    } catch (error) {
-      // Mail delivery failure shouldn't leak whether the account exists, but
-      // is logged — including the URL, so local/dev testing works without a
-      // configured mail provider.
-      this.logger.warn('AuthService', `Password reset email not sent (mailer not configured?) — dev link: ${resetUrl}`);
-      this.logger.error('AuthService', 'Failed to send password reset email', error);
-    }
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
@@ -218,18 +217,18 @@ export class AuthService {
 
     const verifyUrl = `${process.env.USER_EMAIL_VERIFY_URL || 'http://localhost:3000/verify-email/'}${rawToken}`;
 
-    try {
-      await this.mailer.send({
+    // Sent in the background: signup still succeeds if mail fails and the user can request
+    // another link. The URL is logged for local/dev testing without a mail provider.
+    this.mailer
+      .send({
         to: user.email,
         subject: 'Verify your ThreadFlank email',
         html: verificationEmailHtml({ name: user.username, url: verifyUrl, expiresInHours: VERIFY_EMAIL_EXPIRY_HOURS }),
+      })
+      .catch((error) => {
+        this.logger.warn('AuthService', `Verification email not sent (mailer not configured?) — dev link: ${verifyUrl}`);
+        this.logger.error('AuthService', 'Failed to send verification email', error);
       });
-    } catch (error) {
-      // Signup still succeeds; the user can request another link. The URL is logged so
-      // local/dev testing works without a configured mail provider.
-      this.logger.warn('AuthService', `Verification email not sent (mailer not configured?) — dev link: ${verifyUrl}`);
-      this.logger.error('AuthService', 'Failed to send verification email', error);
-    }
   }
 
   async verifyEmail(token: string): Promise<void> {

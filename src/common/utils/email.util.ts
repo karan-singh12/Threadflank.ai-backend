@@ -29,8 +29,36 @@ let transporter: nodemailer.Transporter | null = null;
 
 /** True once credentials and either a host or a service are set, i.e. outgoing mail can be sent. */
 export function isEmailConfigured(): boolean {
+  if (usesHttpApi()) return true;
   const { user, pass, service, host } = readSmtpConfig();
   return !!(user && pass && (service || host));
+}
+
+/**
+ * Hosts such as Render's free tier block outbound SMTP ports (25/465/587), so SMTP times out
+ * there. With RESEND_API_KEY set, mail goes through Resend's HTTPS API instead.
+ */
+export function usesHttpApi(): boolean {
+  return !!process.env.RESEND_API_KEY;
+}
+
+async function sendViaResend(message: { from?: string; to: string | string[]; subject: string; html: string; text: string; replyTo?: string }): Promise<string> {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: message.from,
+      to: Array.isArray(message.to) ? message.to : [message.to],
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+      reply_to: message.replyTo,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+  if (!res.ok) throw new Error(`Resend API error ${res.status}: ${body.message ?? 'request failed'}`);
+  return body.id ?? '';
 }
 
 function getTransporter(): nodemailer.Transporter {
@@ -43,17 +71,17 @@ function getTransporter(): nodemailer.Transporter {
   transporter = nodemailer.createTransport({
     ...(service ? { service } : { host, port, secure }),
     auth: { user, pass },
-    pool: true,
-    maxConnections: 3,
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 20_000,
+    // Generous limits: connecting to Gmail from a cloud host can take longer than a few seconds.
+    connectionTimeout: 60_000,
+    greetingTimeout: 30_000,
+    socketTimeout: 60_000,
   });
   return transporter;
 }
 
 /** Opens a connection and authenticates without sending anything; use it to check SMTP settings. */
 export async function verifyEmailTransport(): Promise<void> {
+  if (usesHttpApi()) return;
   await getTransporter().verify();
 }
 
@@ -85,6 +113,8 @@ export async function sendEmail({ to, subject, html, text, replyTo }: SendEmailI
     text: text ?? htmlToText(html),
     replyTo,
   };
+
+  if (usesHttpApi()) return sendViaResend(message);
 
   try {
     return (await getTransporter().sendMail(message)).messageId;
