@@ -77,17 +77,43 @@ export class AuthService {
         username: username || null,
         role:     assignedRole,
         avatar:   avatar || null,
-        emailVerified: false,
+        // TEMP: email verification is switched off; accounts start verified and log in straight away.
+        // To re-enable: set this to false, uncomment the send + return below, and the login check.
+        // emailVerified: false,
       },
     });
 
-    await this.sendVerificationEmail(user);
+    // await this.sendVerificationEmail(user);
 
-    // No session yet: the account is activated by the emailed link (see verifyEmail).
+    // // No session yet: the account is activated by the emailed link (see verifyEmail).
+    // return {
+    //   message: MESSAGES.auth.verificationSent,
+    //   data: {
+    //     requiresVerification: true,
+    //     user: {
+    //       id:       user.id,
+    //       email:    user.email,
+    //       username: user.username,
+    //       role:     user.role,
+    //       bio:      user.bio,
+    //       phone:    user.phone,
+    //       location: user.location,
+    //       avatar:   user.avatar,
+    //     },
+    //   },
+    // };
+
+    const token = await this.generateToken({
+      userId:   user.id,
+      email:    user.email,
+      role:     user.role,
+      username: user.username || undefined,
+    });
+
     return {
-      message: MESSAGES.auth.verificationSent,
+      message: MESSAGES.auth.signupSuccess,
       data: {
-        requiresVerification: true,
+        token,
         user: {
           id:       user.id,
           email:    user.email,
@@ -122,9 +148,10 @@ export class AuthService {
       throw new UnauthorizedException(MESSAGES.auth.invalidCredentials);
     }
 
-    if (!user.emailVerified) {
-      throw new ForbiddenException(MESSAGES.auth.emailNotVerified);
-    }
+    // TEMP: email verification is switched off (see signup).
+    // if (!user.emailVerified) {
+    //   throw new ForbiddenException(MESSAGES.auth.emailNotVerified);
+    // }
 
     const token = await this.generateToken({
       userId:   user.id,
