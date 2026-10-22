@@ -3,6 +3,7 @@ import { Throttle } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
 import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
+import { VerifyEmailDto } from "./dto/verify-email.dto";
 import { MESSAGES } from "../common/constants/messages.constant";
 
 // Brute-force guard for login/signup/password reset.
@@ -44,5 +45,19 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto) {
     await this.authService.resetPassword(dto);
     return { message: MESSAGES.auth.resetSuccess };
+  }
+
+  @Post("verify-email")
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    await this.authService.verifyEmail(dto.token);
+    return { message: MESSAGES.auth.verifySuccess };
+  }
+
+  @Post("resend-verification")
+  @HttpCode(HttpStatus.OK)
+  async resendVerification(@Body() dto: ForgotPasswordDto) {
+    await this.authService.resendVerification(dto.email);
+    return { message: MESSAGES.auth.verificationResent };
   }
 }

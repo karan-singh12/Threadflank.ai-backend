@@ -46,6 +46,8 @@ model User {
   twinProfile         TwinProfile?
 
   // Image credits: each generated image spends credits; new accounts get the free amount once.
+  // Existing accounts default to verified; signup creates new ones as false until the email link is used.
+  emailVerified        Boolean            @default(true)
   creditBalance        Int                @default(0)
   freeCreditsGrantedAt DateTime?
 }
@@ -1085,4 +1087,18 @@ model CreditTransaction {
   createdAt    DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// ─── Email verification links sent after signup ──────────────────────────────
+
+model UserEmailVerification {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
 }

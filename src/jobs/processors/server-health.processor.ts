@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { AppLogger } from '../../shared/logger/logger.service';
 
 /** Periodically hits the server's own liveness endpoint (/health/live). It checks only
@@ -10,7 +10,7 @@ import { AppLogger } from '../../shared/logger/logger.service';
 export class ServerHealthProcessor {
   private readonly logger = new AppLogger();
 
-  @Cron('0 */14 * * * *')
+  @Cron(CronExpression.EVERY_10_MINUTES)
   async handleServerHealthCheck() {
     const base = (process.env.SERVER_URL || `http://127.0.0.1:${process.env.PORT || process.env.API_PORT || 3003}`).replace(/\/+$/, '');
     const url = `${base}/health/live`;

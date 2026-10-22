@@ -13,6 +13,11 @@ export const MESSAGES = {
     resetRequested:      'If an account exists for this email, a reset link has been sent',
     resetInvalid:        'Invalid or expired password reset token',
     resetSuccess:        'Password reset successfully',
+    verificationSent:    'Account created. Check your email for a link to verify your address',
+    emailNotVerified:    'Please verify your email before logging in',
+    verifyInvalid:       'Invalid or expired email verification link',
+    verifySuccess:       'Email verified successfully',
+    verificationResent:  'If this account still needs verifying, a new link has been sent',
   },
 
   // ─── User / Profile ───────────────────────────────────────────────────────

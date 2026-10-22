@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes, createHash } from 'crypto';
@@ -12,9 +12,11 @@ import { MESSAGES } from '../common/constants/messages.constant';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { MailerService } from '../shared/mailer/mailer.service';
 import { AppLogger } from '../shared/logger/logger.service';
+import { passwordResetEmailHtml, verificationEmailHtml } from '../common/utils/email.util';
 
 const hashResetToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const RESET_PASSWORD_EXPIRY_MIN = Number(process.env.RESET_PASSWORD_EXPIRE_TIME || 30);
+const VERIFY_EMAIL_EXPIRY_HOURS = Number(process.env.VERIFY_EMAIL_EXPIRE_HOURS || 24);
 
 @Injectable()
 export class AuthService {
@@ -75,20 +77,17 @@ export class AuthService {
         username: username || null,
         role:     assignedRole,
         avatar:   avatar || null,
+        emailVerified: false,
       },
     });
 
-    const token = await this.generateToken({
-      userId:   user.id,
-      email:    user.email,
-      role:     user.role,
-      username: user.username || undefined,
-    });
+    await this.sendVerificationEmail(user);
 
+    // No session yet: the account is activated by the emailed link (see verifyEmail).
     return {
-      message: MESSAGES.auth.signupSuccess,
+      message: MESSAGES.auth.verificationSent,
       data: {
-        token,
+        requiresVerification: true,
         user: {
           id:       user.id,
           email:    user.email,
@@ -121,6 +120,10 @@ export class AuthService {
     const isPasswordValid = await this.comparePassword(password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException(MESSAGES.auth.invalidCredentials);
+    }
+
+    if (!user.emailVerified) {
+      throw new ForbiddenException(MESSAGES.auth.emailNotVerified);
     }
 
     const token = await this.generateToken({
@@ -172,7 +175,7 @@ export class AuthService {
       await this.mailer.send({
         to: user.email,
         subject: 'Reset your Threadflank password',
-        html: `<p>Hi ${user.username || ''},</p><p>Click the link below to reset your password. This link expires in ${RESET_PASSWORD_EXPIRY_MIN} minutes.</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
+        html: passwordResetEmailHtml({ name: user.username, url: resetUrl, expiresInMinutes: RESET_PASSWORD_EXPIRY_MIN }),
       });
     } catch (error) {
       // Mail delivery failure shouldn't leak whether the account exists, but
@@ -196,8 +199,60 @@ export class AuthService {
     const hashedPassword = await this.hashPassword(dto.newPassword);
 
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: reset.userId }, data: { password: hashedPassword } }),
+      this.prisma.user.update({ where: { id: reset.userId }, data: { password: hashedPassword, emailVerified: true } }),
       this.prisma.userPasswordReset.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
     ]);
+  }
+
+  // ─── Email verification ───────────────────────────────────────────────────
+
+  private async sendVerificationEmail(user: { id: string; email: string; username: string | null }): Promise<void> {
+    const rawToken = randomBytes(32).toString('hex');
+    await this.prisma.userEmailVerification.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashResetToken(rawToken),
+        expiresAt: new Date(Date.now() + VERIFY_EMAIL_EXPIRY_HOURS * 60 * 60 * 1000),
+      },
+    });
+
+    const verifyUrl = `${process.env.USER_EMAIL_VERIFY_URL || 'http://localhost:3000/verify-email/'}${rawToken}`;
+
+    try {
+      await this.mailer.send({
+        to: user.email,
+        subject: 'Verify your ThreadFlank email',
+        html: verificationEmailHtml({ name: user.username, url: verifyUrl, expiresInHours: VERIFY_EMAIL_EXPIRY_HOURS }),
+      });
+    } catch (error) {
+      // Signup still succeeds; the user can request another link. The URL is logged so
+      // local/dev testing works without a configured mail provider.
+      this.logger.warn('AuthService', `Verification email not sent (mailer not configured?) — dev link: ${verifyUrl}`);
+      this.logger.error('AuthService', 'Failed to send verification email', error);
+    }
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const record = await this.prisma.userEmailVerification.findFirst({
+      where: { tokenHash: hashResetToken(token), usedAt: null },
+    });
+
+    if (!record || record.expiresAt < new Date()) {
+      throw new BadRequestException(MESSAGES.auth.verifyInvalid);
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: record.userId }, data: { emailVerified: true } }),
+      this.prisma.userEmailVerification.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+    ]);
+  }
+
+  async resendVerification(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+
+    // Same silent outcome for unknown or already-verified emails, so this can't be used to probe accounts.
+    if (!user || user.emailVerified) return;
+
+    await this.sendVerificationEmail(user);
   }
 }
