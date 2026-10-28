@@ -5,7 +5,6 @@ import { BackgroundJobsProcessor } from "./processors/background-jobs.processor"
 import { BackgroundJobsService } from "./queues/background-jobs.service";
 import { BrandPostSchedulerProcessor } from "./processors/brand-post-scheduler.processor";
 import { BrandStoryCleanupProcessor } from "./processors/brand-story-cleanup.processor";
-import { ServerHealthProcessor } from "./processors/server-health.processor";
 import { PrismaModule } from "../prisma/prisma.module";
 import { BrandPostsModule } from "../modules/brand-posts/brand-posts.module";
 import { BrandStoriesModule } from "../modules/brand-stories/brand-stories.module";
@@ -89,7 +88,6 @@ function getRedisConnectionOptions() {
     BackgroundJobsService,
     BrandPostSchedulerProcessor,
     BrandStoryCleanupProcessor,
-    ServerHealthProcessor,
   ],
   exports: [
     BackgroundJobsService,
