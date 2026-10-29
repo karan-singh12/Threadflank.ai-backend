@@ -21,6 +21,7 @@ import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import * as path from "path";
 import { Readable } from "stream";
+import { SecurityObservabilityService } from "./modules/security-observability/security-observability.service";
 
 async function bootstrap() {
   console.log("[bootstrap] Starting NestFactory.create...");
@@ -31,6 +32,32 @@ async function bootstrap() {
     new FastifyAdapter({ bodyLimit: 30 * 1024 * 1024 })
   );
   console.log("[bootstrap] NestFactory.create finished.");
+
+  // Passive Security & Bot Observability hook (0ms latency, zero blocking):
+  const securityService = app.get(SecurityObservabilityService);
+  app.getHttpAdapter().getInstance().addHook("onResponse", async (request: any, reply: any) => {
+    try {
+      const ip =
+        request.headers?.["x-forwarded-for"]?.split(",")?.[0]?.trim() ||
+        request.headers?.["x-real-ip"] ||
+        request.ip ||
+        request.raw?.socket?.remoteAddress ||
+        "unknown";
+
+      securityService.recordRequest({
+        ip,
+        method: request.method,
+        url: request.raw?.url || request.url,
+        statusCode: reply.statusCode,
+        responseTime: reply.elapsedTime || 0,
+        userAgent: request.headers?.["user-agent"] || "",
+        query: request.query,
+        body: request.body,
+      });
+    } catch {
+      // Never break request lifecycle
+    }
+  });
 
   // Register custom Redis adapter for scalable WebSockets
   const redisIoAdapter = new RedisIoAdapter(app);

@@ -41,6 +41,7 @@ import { ShareModule } from "./modules/share/share.module";
 import { AiObservabilityModule } from "./modules/ai-observability/ai-observability.module";
 import { AdminOpsModule } from "./modules/admin-ops/admin-ops.module";
 import { WidgetModule } from "./modules/widget/widget.module";
+import { SecurityObservabilityModule } from "./modules/security-observability/security-observability.module";
 
 
 
@@ -137,6 +138,7 @@ import { WidgetModule } from "./modules/widget/widget.module";
     AiObservabilityModule,
     AdminOpsModule,
     WidgetModule,
+    SecurityObservabilityModule,
   ],
   controllers: [AppController],
   providers: [
