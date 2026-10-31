@@ -77,43 +77,17 @@ export class AuthService {
         username: username || null,
         role:     assignedRole,
         avatar:   avatar || null,
-        // TEMP: email verification is switched off; accounts start verified and log in straight away.
-        // To re-enable: set this to false, uncomment the send + return below, and the login check.
-        // emailVerified: false,
+        emailVerified: false,
       },
     });
 
-    // await this.sendVerificationEmail(user);
+    await this.sendVerificationEmail(user);
 
-    // // No session yet: the account is activated by the emailed link (see verifyEmail).
-    // return {
-    //   message: MESSAGES.auth.verificationSent,
-    //   data: {
-    //     requiresVerification: true,
-    //     user: {
-    //       id:       user.id,
-    //       email:    user.email,
-    //       username: user.username,
-    //       role:     user.role,
-    //       bio:      user.bio,
-    //       phone:    user.phone,
-    //       location: user.location,
-    //       avatar:   user.avatar,
-    //     },
-    //   },
-    // };
-
-    const token = await this.generateToken({
-      userId:   user.id,
-      email:    user.email,
-      role:     user.role,
-      username: user.username || undefined,
-    });
-
+    // No session yet: the account is activated by the emailed link (see verifyEmail).
     return {
-      message: MESSAGES.auth.signupSuccess,
+      message: MESSAGES.auth.verificationSent,
       data: {
-        token,
+        requiresVerification: true,
         user: {
           id:       user.id,
           email:    user.email,
@@ -148,10 +122,9 @@ export class AuthService {
       throw new UnauthorizedException(MESSAGES.auth.invalidCredentials);
     }
 
-    // TEMP: email verification is switched off (see signup).
-    // if (!user.emailVerified) {
-    //   throw new ForbiddenException(MESSAGES.auth.emailNotVerified);
-    // }
+    if (!user.emailVerified) {
+      throw new ForbiddenException(MESSAGES.auth.emailNotVerified);
+    }
 
     const token = await this.generateToken({
       userId:   user.id,
@@ -196,7 +169,8 @@ export class AuthService {
       },
     });
 
-    const resetUrl = `${process.env.USER_PASSWORD_RESET_URL || 'http://localhost:3000/reset-password/'}${rawToken}`;
+    const baseResetUrl = (process.env.USER_PASSWORD_RESET_URL || 'http://localhost:3000/reset-password').replace(/\/+$/, '');
+    const resetUrl = `${baseResetUrl}/${rawToken}`;
 
     // Sent in the background so a slow or failing mail server doesn't hold up the response (or
     // reveal that the account exists). Failures are logged with the URL for local/dev testing.
@@ -242,7 +216,8 @@ export class AuthService {
       },
     });
 
-    const verifyUrl = `${process.env.USER_EMAIL_VERIFY_URL || 'http://localhost:3000/verify-email/'}${rawToken}`;
+    const baseVerifyUrl = (process.env.USER_EMAIL_VERIFY_URL || 'http://localhost:3000/verify-email').replace(/\/+$/, '');
+    const verifyUrl = `${baseVerifyUrl}/${rawToken}`;
 
     // Sent in the background: signup still succeeds if mail fails and the user can request
     // another link. The URL is logged for local/dev testing without a mail provider.
