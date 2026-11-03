@@ -211,6 +211,38 @@ model TrafficLog {
   @@map("traffic_logs")
 }
 
+/// IPs banned by the security module (auto or manual). Reloaded into memory on boot so
+/// bans survive deploys; rows are kept after expiry as an audit trail.
+model BlockedIp {
+  id              Int      @id @default(autoincrement())
+  ip              String   @unique @db.VarChar(45)
+  reason          String
+  category        String   @db.VarChar(40)
+  offenses        Int      @default(1)
+  blockedRequests Int      @default(0) @map("blocked_requests")
+  bannedAt        DateTime @map("banned_at")
+  expiresAt       DateTime @map("expires_at")
+  /// false once an admin lifts the ban
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([active, expiresAt])
+  @@map("blocked_ips")
+}
+
+/// One row per UTC day of security counters, powering "N bots blocked" metrics.
+model SecurityDailyStat {
+  date            DateTime @id @db.Date
+  threats         Int      @default(0)
+  blockedRequests Int      @default(0) @map("blocked_requests")
+  bansIssued      Int      @default(0) @map("bans_issued")
+  categories      Json?
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("security_daily_stats")
+}
+
 enum Role {
   USER
   ADMIN

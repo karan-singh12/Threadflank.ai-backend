@@ -22,6 +22,7 @@ import fastifyStatic from "@fastify/static";
 import * as path from "path";
 import { Readable } from "stream";
 import { SecurityObservabilityService } from "./modules/security-observability/security-observability.service";
+import { getClientIp } from "./common/utils/client-ip.util";
 
 async function bootstrap() {
   console.log("[bootstrap] Starting NestFactory.create...");
@@ -29,20 +30,56 @@ async function bootstrap() {
     AppModule,
     // Drape sends twins and garment photos inline as data URIs (up to 6 people with
     // several pieces each), well past Fastify's 1 MB default.
-    new FastifyAdapter({ bodyLimit: 30 * 1024 * 1024 })
+    new FastifyAdapter({
+      bodyLimit: 30 * 1024 * 1024,
+      // Slowloris / hung-connection protection
+      connectionTimeout: 120_000,
+      keepAliveTimeout: 65_000,
+      // Generous: mobile clients upload up to 100 MB over slow links
+      requestTimeout: 300_000,
+    })
   );
   console.log("[bootstrap] NestFactory.create finished.");
 
   // Passive Security & Bot Observability hook (0ms latency, zero blocking):
   const securityService = app.get(SecurityObservabilityService);
-  app.getHttpAdapter().getInstance().addHook("onResponse", async (request: any, reply: any) => {
+  const fastify = app.getHttpAdapter().getInstance();
+
+  // Enforcement gate: runs before routing, auth and body parsing, so banned IPs and
+  // floods (including 404 scanners the route-level throttler never sees) cost almost nothing.
+  fastify.addHook("onRequest", async (request: any, reply: any) => {
+    // Orchestrator health probes must never be blocked
+    if (request.raw?.url?.startsWith("/api/health") || request.raw?.url?.startsWith("/health")) return;
+    const verdict = securityService.checkRequest(getClientIp(request));
+    if (!verdict) return;
+    reply
+      .code(verdict.status)
+      .header("Retry-After", String(verdict.retryAfterSec))
+      .header("Cache-Control", "no-store")
+      .send(verdict.status === 429 ? { statusCode: 429, message: "Too many requests" } : { statusCode: 403, message: "Forbidden" });
+    return reply;
+  });
+
+  // Baseline security headers (the API has no use for framing, sniffing or referrers)
+  fastify.addHook("onSend", async (request: any, reply: any, payload: any) => {
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("Cross-Origin-Resource-Policy", "cross-origin"); // media is embedded by the web/mobile apps
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    if (process.env.NODE_ENV === "production") {
+      reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    // Swagger UI needs inline scripts/styles, so only lock down the JSON API surface
+    if (!request.raw?.url?.startsWith("/api/docs")) {
+      reply.header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    }
+    return payload;
+  });
+
+  fastify.addHook("onResponse", async (request: any, reply: any) => {
     try {
-      const ip =
-        request.headers?.["x-forwarded-for"]?.split(",")?.[0]?.trim() ||
-        request.headers?.["x-real-ip"] ||
-        request.ip ||
-        request.raw?.socket?.remoteAddress ||
-        "unknown";
+      const ip = getClientIp(request);
 
       securityService.recordRequest({
         ip,
@@ -109,10 +146,14 @@ async function bootstrap() {
   SwaggerModule.setup("api/docs", app, swaggerDocument);
 
   // Enable CORS
+  // Set CORS_ORIGINS="https://app.threadflank.com,https://admin.threadflank.com" to lock this
+  // down. Unset keeps the previous allow-all behaviour so deploys don't break unannounced.
+  const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   app.enableCors({
-    origin: "*",
+    origin: corsOrigins.length ? corsOrigins : "*",
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
     allowedHeaders: "Content-Type, Accept, Authorization",
+    maxAge: 86400,
   });
 
   // Register global interceptor, exception filter, and validation pipe

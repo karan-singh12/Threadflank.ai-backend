@@ -56,6 +56,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const userId = request?.user?.userId || request?.user?.id || "anonymous";
     const stack = exception instanceof Error ? exception.stack : undefined;
 
+    // Scanner noise (404/401/403/429) is already counted by the security module; a multi-line
+    // stack trace per probe buried real errors in the logs, so log those on one line.
+    if (status === 404 || status === 401 || status === 403 || status === 429) {
+      console.warn(`[${status}] ${request?.method} ${request?.url} (${userId})`);
+    } else
     // Vivid terminal logging for all catch-time errors
     console.error(
       `\n\x1b[41m\x1b[37m[API ERROR CAUGHT]\x1b[0m \x1b[31m${request?.method} ${request?.url} -> HTTP ${status} (${error})\x1b[0m\n` +

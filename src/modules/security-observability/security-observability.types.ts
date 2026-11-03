@@ -28,8 +28,21 @@ export interface SecurityEvent {
   action: "OBSERVED" | "BLOCKED";
 }
 
+export interface BannedIp {
+  ip: string;
+  reason: string;
+  category: ThreatCategory | "MANUAL";
+  bannedAt: string;
+  expiresAt: string;
+  /** How many times this IP has been banned (drives escalating ban length). */
+  offenses: number;
+  blockedRequests: number;
+}
+
 export interface SecurityMetrics {
   mode: "OBSERVATION" | "ENFORCEMENT";
+  activeBans: number;
+  blockedRequests: number;
   totalThreats: number;
   threatsToday: number;
   threatsLastHour: number;
