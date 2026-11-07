@@ -16,7 +16,7 @@ import { passwordResetEmailHtml, verificationEmailHtml } from '../common/utils/e
 
 const hashResetToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const RESET_PASSWORD_EXPIRY_MIN = Number(process.env.RESET_PASSWORD_EXPIRE_TIME || 30);
-const VERIFY_EMAIL_EXPIRY_HOURS = Number(process.env.VERIFY_EMAIL_EXPIRE_HOURS || 24);
+const VERIFY_EMAIL_EXPIRY_HOURS = Number(process.env.VERIFY_EMAIL_EXPIRY_HOURS || process.env.VERIFY_EMAIL_EXPIRE_HOURS || 24);
 
 @Injectable()
 export class AuthService {
