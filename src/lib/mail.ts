@@ -20,3 +20,4 @@ export async function sendMail(to: string, subject: string, html: string) {
   }
   return res.json(); // { messageId: "..." }
 }
+
