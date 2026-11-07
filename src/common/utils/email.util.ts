@@ -35,11 +35,49 @@ export function isEmailConfigured(): boolean {
 }
 
 /**
- * Hosts such as Render's free tier block outbound SMTP ports (25/465/587), so SMTP times out
- * there. With RESEND_API_KEY set, mail goes through Resend's HTTPS API instead.
+ * Mail can go through Brevo or Resend HTTPS API instead of SMTP.
+ * Useful on cloud platforms that block or throttle outbound SMTP ports (25/465/587).
  */
 export function usesHttpApi(): boolean {
-  return !!process.env.RESEND_API_KEY;
+  return !!(process.env.BREVO_API_KEY || process.env.RESEND_API_KEY);
+}
+
+/**
+ * Sends transactional email via Brevo REST API v3.
+ */
+async function sendViaBrevo(message: { from?: string; to: string | string[]; subject: string; html: string; text?: string; replyTo?: string }): Promise<string> {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) throw new Error('BREVO_API_KEY is not defined in environment');
+
+  const senderEmail = process.env.MAIL_FROM || 'noreply@threadflank.com';
+  const senderName = process.env.MAIL_FROM_NAME || 'Threadflank';
+  const recipients = (Array.isArray(message.to) ? message.to : [message.to]).map((email) => ({ email }));
+
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: senderName, email: senderEmail },
+      to: recipients,
+      subject: message.subject,
+      htmlContent: message.html,
+      ...(message.text ? { textContent: message.text } : {}),
+      ...(message.replyTo ? { replyTo: { email: message.replyTo } } : {}),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Brevo ${res.status}: ${errorText}`);
+  }
+
+  const data = (await res.json().catch(() => ({}))) as { messageId?: string };
+  return data.messageId ?? '';
 }
 
 async function sendViaResend(message: { from?: string; to: string | string[]; subject: string; html: string; text: string; replyTo?: string }): Promise<string> {
@@ -103,7 +141,7 @@ const htmlToText = (html: string) =>
 const isTransient = (error: unknown) =>
   ['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET', 'EDNS'].includes((error as { code?: string })?.code ?? '');
 
-/** Sends one email over SMTP through nodemailer, retrying once on a transient connection error. Returns the message id. */
+/** Sends one email over Brevo, Resend, or SMTP through nodemailer, retrying once on a transient connection error. Returns the message id. */
 export async function sendEmail({ to, subject, html, text, replyTo }: SendEmailInput): Promise<string> {
   const message = {
     from: process.env.MAIL_FROM || readSmtpConfig().user,
@@ -114,7 +152,8 @@ export async function sendEmail({ to, subject, html, text, replyTo }: SendEmailI
     replyTo,
   };
 
-  if (usesHttpApi()) return sendViaResend(message);
+  if (process.env.BREVO_API_KEY) return sendViaBrevo(message);
+  if (process.env.RESEND_API_KEY) return sendViaResend(message);
 
   try {
     return (await getTransporter().sendMail(message)).messageId;
@@ -122,6 +161,11 @@ export async function sendEmail({ to, subject, html, text, replyTo }: SendEmailI
     if (!isTransient(error)) throw error;
     return (await getTransporter().sendMail(message)).messageId;
   }
+}
+
+/** Convenience wrapper matching Brevo SMTP API format */
+export async function sendMail(to: string, subject: string, html: string) {
+  return sendViaBrevo({ to, subject, html });
 }
 
 const escapeHtml = (value: string) =>

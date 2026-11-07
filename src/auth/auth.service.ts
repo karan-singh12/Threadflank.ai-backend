@@ -77,39 +77,13 @@ export class AuthService {
         username: username || null,
         role:     assignedRole,
         avatar:   avatar || null,
-        emailVerified: true, // Auto-verified: email verification commented out for now
+        emailVerified: false,
       },
     });
 
-    // Email verification commented out for now
-    // await this.sendVerificationEmail(user);
+    await this.sendVerificationEmail(user);
 
-    // Auto-login on signup (email verification disabled for now)
-    const token = await this.generateToken({
-      userId:   user.id,
-      email:    user.email,
-      role:     user.role,
-      username: user.username || undefined,
-    });
-
-    return {
-      message: MESSAGES.auth.signupSuccess,
-      data: {
-        token,
-        user: {
-          id:       user.id,
-          email:    user.email,
-          username: user.username,
-          role:     user.role,
-          bio:      user.bio,
-          phone:    user.phone,
-          location: user.location,
-          avatar:   user.avatar,
-        },
-      },
-    };
-    /*
-    // No session yet: the account is activated by the emailed link (see verifyEmail).
+    // Account requires verification through link sent via Brevo
     return {
       message: MESSAGES.auth.verificationSent,
       data: {
@@ -126,7 +100,6 @@ export class AuthService {
         },
       },
     };
-    */
   }
 
   async login(loginDto: LoginDto) {
@@ -149,12 +122,9 @@ export class AuthService {
       throw new UnauthorizedException(MESSAGES.auth.invalidCredentials);
     }
 
-    // Email verification check commented out for now
-    /*
     if (!user.emailVerified) {
       throw new ForbiddenException(MESSAGES.auth.emailNotVerified);
     }
-    */
 
     const token = await this.generateToken({
       userId:   user.id,
@@ -234,9 +204,8 @@ export class AuthService {
     ]);
   }
 
-  // ─── Email verification (commented out for now) ───────────────────────────
+  // ─── Email verification (Brevo transactional email) ───────────────────────
 
-  /*
   private async sendVerificationEmail(user: { id: string; email: string; username: string | null }): Promise<void> {
     const rawToken = randomBytes(32).toString('hex');
     await this.prisma.userEmailVerification.create({
@@ -250,8 +219,7 @@ export class AuthService {
     const baseVerifyUrl = (process.env.USER_EMAIL_VERIFY_URL || 'http://localhost:3000/verify-email').replace(/\/+$/, '');
     const verifyUrl = `${baseVerifyUrl}/${rawToken}`;
 
-    // Sent in the background: signup still succeeds if mail fails and the user can request
-    // another link. The URL is logged for local/dev testing without a mail provider.
+    // Sent via Brevo HTTP API
     this.mailer
       .send({
         to: user.email,
@@ -259,16 +227,12 @@ export class AuthService {
         html: verificationEmailHtml({ name: user.username, url: verifyUrl, expiresInHours: VERIFY_EMAIL_EXPIRY_HOURS }),
       })
       .catch((error) => {
-        this.logger.warn('AuthService', `Verification email not sent (mailer not configured?) — dev link: ${verifyUrl}`);
-        this.logger.error('AuthService', 'Failed to send verification email', error);
+        this.logger.warn('AuthService', `Verification email not sent — dev link: ${verifyUrl}`);
+        this.logger.error('AuthService', 'Failed to send verification email via Brevo', error);
       });
   }
-  */
 
-  async verifyEmail(_token: string): Promise<void> {
-    // Email verification disabled for now — auto-success
-    return;
-    /*
+  async verifyEmail(token: string): Promise<void> {
     const record = await this.prisma.userEmailVerification.findFirst({
       where: { tokenHash: hashResetToken(token), usedAt: null },
     });
@@ -281,19 +245,14 @@ export class AuthService {
       this.prisma.user.update({ where: { id: record.userId }, data: { emailVerified: true } }),
       this.prisma.userEmailVerification.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
     ]);
-    */
   }
 
-  async resendVerification(_email: string): Promise<void> {
-    // Email verification disabled for now
-    return;
-    /*
+  async resendVerification(email: string): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
 
     // Same silent outcome for unknown or already-verified emails, so this can't be used to probe accounts.
     if (!user || user.emailVerified) return;
 
     await this.sendVerificationEmail(user);
-    */
   }
 }
