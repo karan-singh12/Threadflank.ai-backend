@@ -77,12 +77,38 @@ export class AuthService {
         username: username || null,
         role:     assignedRole,
         avatar:   avatar || null,
-        emailVerified: false,
+        emailVerified: true, // Auto-verified: email verification commented out for now
       },
     });
 
-    await this.sendVerificationEmail(user);
+    // Email verification commented out for now
+    // await this.sendVerificationEmail(user);
 
+    // Auto-login on signup (email verification disabled for now)
+    const token = await this.generateToken({
+      userId:   user.id,
+      email:    user.email,
+      role:     user.role,
+      username: user.username || undefined,
+    });
+
+    return {
+      message: MESSAGES.auth.signupSuccess,
+      data: {
+        token,
+        user: {
+          id:       user.id,
+          email:    user.email,
+          username: user.username,
+          role:     user.role,
+          bio:      user.bio,
+          phone:    user.phone,
+          location: user.location,
+          avatar:   user.avatar,
+        },
+      },
+    };
+    /*
     // Account requires verification through link sent via Brevo
     return {
       message: MESSAGES.auth.verificationSent,
@@ -100,6 +126,7 @@ export class AuthService {
         },
       },
     };
+    */
   }
 
   async login(loginDto: LoginDto) {
@@ -122,9 +149,12 @@ export class AuthService {
       throw new UnauthorizedException(MESSAGES.auth.invalidCredentials);
     }
 
+    // Email verification check commented out for now
+    /*
     if (!user.emailVerified) {
       throw new ForbiddenException(MESSAGES.auth.emailNotVerified);
     }
+    */
 
     const token = await this.generateToken({
       userId:   user.id,
@@ -204,8 +234,9 @@ export class AuthService {
     ]);
   }
 
-  // ─── Email verification (Brevo transactional email) ───────────────────────
+  // ─── Email verification (commented out for now) ───────────────────────────
 
+  /*
   private async sendVerificationEmail(user: { id: string; email: string; username: string | null }): Promise<void> {
     const rawToken = randomBytes(32).toString('hex');
     await this.prisma.userEmailVerification.create({
@@ -231,10 +262,14 @@ export class AuthService {
         this.logger.error('AuthService', 'Failed to send verification email via Brevo', error);
       });
   }
+  */
 
-  async verifyEmail(token: string): Promise<void> {
+  async verifyEmail(_token: string): Promise<void> {
+    // Email verification disabled for now — auto-success
+    return;
+    /*
     const record = await this.prisma.userEmailVerification.findFirst({
-      where: { tokenHash: hashResetToken(token), usedAt: null },
+      where: { tokenHash: hashResetToken(_token), usedAt: null },
     });
 
     if (!record || record.expiresAt < new Date()) {
@@ -245,14 +280,19 @@ export class AuthService {
       this.prisma.user.update({ where: { id: record.userId }, data: { emailVerified: true } }),
       this.prisma.userEmailVerification.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
     ]);
+    */
   }
 
-  async resendVerification(email: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  async resendVerification(_email: string): Promise<void> {
+    // Email verification disabled for now
+    return;
+    /*
+    const user = await this.prisma.user.findUnique({ where: { email: _email.toLowerCase() } });
 
     // Same silent outcome for unknown or already-verified emails, so this can't be used to probe accounts.
     if (!user || user.emailVerified) return;
 
     await this.sendVerificationEmail(user);
+    */
   }
 }
