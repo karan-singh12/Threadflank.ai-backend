@@ -11,7 +11,7 @@ export function modelForProvider(provider: ProviderName): string {
     case 'claude':
       return process.env.CLAUDE_MODEL || 'claude-opus-5';
     case 'openrouter':
-      return process.env.OPENROUTER_MODEL || process.env.OPENROUTER_BULK_MODEL || 'google/gemini-2.5-flash';
+      return process.env.OPENROUTER_MODEL || process.env.OPENROUTER_BULK_MODEL || 'google/gemini-3.8-flash';
     case 'groq':
       return process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
     case 'openai':

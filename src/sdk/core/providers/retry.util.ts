@@ -26,6 +26,21 @@ export function isQuotaExhaustedError(error: unknown): boolean {
   );
 }
 
+export function isModelUnavailableError(error: unknown): boolean {
+  const status = (error as any)?.status ?? (error as any)?.response?.status ?? (error as any)?.code;
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+
+  return (
+    status === 404 ||
+    message.includes('404') ||
+    message.includes('not found') ||
+    message.includes('no longer available') ||
+    message.includes('not available to new users') ||
+    message.includes('model not found') ||
+    message.includes('is not supported')
+  );
+}
+
 export function isRetryable(error: unknown): boolean {
   const status = (error as any)?.status ?? (error as any)?.response?.status;
   if (typeof status === 'number') return RETRYABLE_STATUS.has(status);
@@ -44,8 +59,8 @@ export async function withRetry<T>(providerName: string, fn: () => Promise<T>, a
     } catch (error) {
       lastError = error;
 
-      // Quota / exhaustion should fail fast without wasting retries, immediately triggering fallback
-      if (isQuotaExhaustedError(error)) {
+      // Quota / exhaustion or deprecated/unavailable model should fail fast without wasting retries, immediately triggering fallback
+      if (isQuotaExhaustedError(error) || isModelUnavailableError(error)) {
         throw new ProviderTransientError(providerName, error, true);
       }
 

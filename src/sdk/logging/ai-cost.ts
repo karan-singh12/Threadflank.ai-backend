@@ -9,6 +9,9 @@ import { UsageInfo } from '../core/providers/provider.types';
 type Price = { input?: number; output?: number; perRun?: number };
 
 const DEFAULT_PRICES: Record<string, Price> = {
+  'gemini-3.8-flash': { input: 0.3, output: 2.5 },
+  'google/gemini-3.8-flash': { input: 0.3, output: 2.5 },
+  'gemini-3.8-flash-lite': { input: 0.1, output: 0.4 },
   'gemini-2.5-flash': { input: 0.3, output: 2.5 },
   'google/gemini-2.5-flash': { input: 0.3, output: 2.5 },
   'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },

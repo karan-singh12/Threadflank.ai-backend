@@ -4,7 +4,7 @@ import { ROUTER_CONFIG, modelForProvider } from './router-config';
 import { ProviderName, RouteOverride, TaskType } from './router.types';
 import { GenerateRequest, GenerateResponse } from '../providers/provider.types';
 import { ProviderTransientError } from '../providers/base.provider';
-import { isQuotaExhaustedError } from '../providers/retry.util';
+import { isQuotaExhaustedError, isModelUnavailableError } from '../providers/retry.util';
 import { AiRequestLoggerService } from '../../logging/ai-request-logger.service';
 import { MESSAGES } from '../../../common/constants/messages.constant';
 
@@ -115,7 +115,9 @@ export class ModelRouter {
       } catch (error) {
         lastError = error;
         const isExhausted =
-          (error instanceof ProviderTransientError && error.isExhausted) || isQuotaExhaustedError(error);
+          (error instanceof ProviderTransientError && error.isExhausted) ||
+          isQuotaExhaustedError(error) ||
+          isModelUnavailableError(error);
 
         if (isExhausted) {
           const cooldownMs = parseInt(process.env.PROVIDER_COOLDOWN_MS || '60000', 10) || 60_000;
