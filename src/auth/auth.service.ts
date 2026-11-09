@@ -186,9 +186,11 @@ export class AuthService {
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
 
-    // Always resolve the same way whether or not the account exists, so this
-    // endpoint can't be used to enumerate registered emails.
-    if (!user) return;
+    // Always resolve the same way to prevent account enumeration, but log for dev visibility.
+    if (!user) {
+      this.logger.warn('AuthService', `Forgot password requested for non-existent email: ${dto.email}`);
+      return;
+    }
 
     const rawToken = randomBytes(32).toString('hex');
     await this.prisma.userPasswordReset.create({
@@ -202,16 +204,19 @@ export class AuthService {
     const baseResetUrl = (process.env.USER_PASSWORD_RESET_URL || 'http://localhost:3000/reset-password').replace(/\/+$/, '');
     const resetUrl = `${baseResetUrl}/${rawToken}`;
 
-    // Sent in the background so a slow or failing mail server doesn't hold up the response (or
-    // reveal that the account exists). Failures are logged with the URL for local/dev testing.
+    // Sent in the background so slow mail servers don't hold up responses.
+    // Both real delivery via Brevo/SMTP and dev console logging are ensured.
     this.mailer
       .send({
         to: user.email,
-        subject: 'Reset your Threadflank password',
+        subject: 'Reset your Threadflank password — Email Verification',
         html: passwordResetEmailHtml({ name: user.username, url: resetUrl, expiresInMinutes: RESET_PASSWORD_EXPIRY_MIN }),
       })
+      .then(() => {
+        this.logger.info('AuthService', `Password reset verification email sent to ${user.email} — local test link: ${resetUrl}`);
+      })
       .catch((error) => {
-        this.logger.warn('AuthService', `Password reset email not sent (mailer not configured?) — dev link: ${resetUrl}`);
+        this.logger.warn('AuthService', `Password reset email not delivered — dev link: ${resetUrl}`);
         this.logger.error('AuthService', 'Failed to send password reset email', error);
       });
   }

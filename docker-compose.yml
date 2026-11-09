@@ -1,6 +1,9 @@
-# Local development database.
-#   docker compose up -d     → start Postgres on localhost:5433
-#   docker compose down -v   → stop it and wipe all data
+# Local development services for ThreadFlank backend.
+#   docker compose up -d          → start Postgres & Redis
+#   docker compose up -d redis    → start Redis only
+#   docker compose down           → stop services
+#   docker compose down -v        → stop and wipe persistent volumes
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -20,5 +23,45 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: outfit-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6381}:6379"
+    volumes:
+      - outfit-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outfit-backend
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3003}:3003"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    profiles:
+      - app
+      - full
+
 volumes:
   outfit-pgdata:
+  outfit-redisdata:

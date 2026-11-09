@@ -21,6 +21,9 @@
     "rag:ingest": "ts-node --transpile-only prisma/seed-rag.ts",
     "rag:ingest:style": "ts-node --transpile-only prisma/seed-rag-style.ts",
     "db:up": "docker compose up -d --wait",
+    "redis:up": "docker compose up -d --wait redis",
+    "services:up": "docker compose up -d --wait",
+    "services:down": "docker compose down",
     "db:reset": "prisma db push --force-reset && npm run seed"
   },
   "dependencies": {

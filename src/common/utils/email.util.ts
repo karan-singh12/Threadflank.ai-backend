@@ -43,14 +43,38 @@ export function usesHttpApi(): boolean {
 }
 
 /**
+ * Extracts a clean email and sender name from strings like:
+ * "ThreadFlank <no-reply@threadflank.com>", "no-reply@threadflank.com", or env vars.
+ */
+export function getSenderInfo(from?: string): { name: string; email: string } {
+  const raw = from || process.env.MAIL_FROM || process.env.EMAIL || 'no-reply@threadflank.com';
+  const defaultName = process.env.MAIL_FROM_NAME || 'Threadflank';
+
+  // Strip surrounding quotes
+  const cleaned = raw.trim().replace(/^["']+|["']+$/g, '');
+
+  // Match "Name <email@domain.com>" or just "email@domain.com"
+  const match = cleaned.match(/^(?:(.*?)<)?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?$/);
+  if (match) {
+    const name = match[1]?.trim() || defaultName;
+    const email = match[2]?.trim();
+    return { name, email };
+  }
+
+  return {
+    name: defaultName,
+    email: process.env.EMAIL || 'no-reply@threadflank.com',
+  };
+}
+
+/**
  * Sends transactional email via Brevo REST API v3.
  */
 async function sendViaBrevo(message: { from?: string; to: string | string[]; subject: string; html: string; text?: string; replyTo?: string }): Promise<string> {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) throw new Error('BREVO_API_KEY is not defined in environment');
 
-  const senderEmail = process.env.MAIL_FROM || 'noreply@threadflank.com';
-  const senderName = process.env.MAIL_FROM_NAME || 'Threadflank';
+  const sender = getSenderInfo(message.from);
   const recipients = (Array.isArray(message.to) ? message.to : [message.to]).map((email) => ({ email }));
 
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -61,7 +85,7 @@ async function sendViaBrevo(message: { from?: string; to: string | string[]; sub
       accept: 'application/json',
     },
     body: JSON.stringify({
-      sender: { name: senderName, email: senderEmail },
+      sender: { name: sender.name, email: sender.email },
       to: recipients,
       subject: message.subject,
       htmlContent: message.html,
