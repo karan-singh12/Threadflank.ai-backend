@@ -58,6 +58,40 @@ export class BrandLoginDto {
   password!: string;
 }
 
+export class RegisterBrandDto {
+  @ApiProperty({ example: 'Raw Mango Atelier' })
+  @IsString()
+  name!: string;
+
+  @ApiPropertyOptional({ example: 'raw-mango' })
+  @IsString()
+  @IsOptional()
+  slug?: string;
+
+  @ApiProperty({ example: 'atelier@rawmango.com' })
+  @IsString()
+  email!: string;
+
+  @ApiProperty({ example: 'luxury2026' })
+  @IsString()
+  password!: string;
+
+  @ApiPropertyOptional({ example: 'Ethnic Wear' })
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @ApiPropertyOptional({ example: 'https://rawmango.com' })
+  @IsString()
+  @IsOptional()
+  websiteUrl?: string;
+
+  @ApiPropertyOptional({ example: 'Lodhi Colony Market, New Delhi, India' })
+  @IsString()
+  @IsOptional()
+  physicalStoreAddress?: string;
+}
+
 export class CreateGarmentDto {
   @ApiProperty({ example: 'Varanasi Gold Zari Tissue Lehenga' })
   @IsString()

@@ -1,6 +1,6 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { BrandLoginDto } from '../dto/brand-common.dto';
+import { BrandLoginDto, RegisterBrandDto } from '../dto/brand-common.dto';
 
 @Injectable()
 export class BrandAuthService {
@@ -66,6 +66,48 @@ export class BrandAuthService {
       rankScore: social.rankScore ?? 8450,
       widgetKey: brand.widgetKey,
       widgetEnabled: brand.widgetEnabled,
+    };
+  }
+
+  async register(dto: RegisterBrandDto) {
+    const slug =
+      dto.slug?.toLowerCase().trim() ||
+      dto.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+
+    const existing = await this.prisma.brand.findUnique({ where: { slug } });
+    if (existing) {
+      throw new BadRequestException(`An Atelier with slug "${slug}" or name "${dto.name}" already exists.`);
+    }
+
+    const created = await this.prisma.brand.create({
+      data: {
+        name: dto.name,
+        slug,
+        category: dto.category || 'Luxury Fashion',
+        websiteUrl: dto.websiteUrl || '',
+        isVerified: false,
+        description: `Official atelier showcase for ${dto.name}. Experience virtual try-ons and collections.`,
+        logoUrl: 'https://images.unsplash.com/photo-1544441893-675973e31985?w=200&auto=format&fit=crop&q=80',
+        widgetEnabled: true,
+        socialLinks: {
+          workEmail: dto.email,
+          flagshipAddress: dto.physicalStoreAddress || '',
+          themeAccent: '#7c5cff',
+          aiCredits: 100, // 100 free welcome credits for new brands
+          rankScore: 1000,
+        },
+      },
+    });
+
+    const profile = await this.validateOrGetBrand(created.slug);
+
+    return {
+      token: `brand_jwt_token_${Buffer.from(created.id).toString('base64')}`,
+      brand: profile,
+      message: 'Atelier registered successfully! Welcome to ThreadFlank Brand OS.',
     };
   }
 
