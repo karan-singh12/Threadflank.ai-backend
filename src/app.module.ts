@@ -42,6 +42,7 @@ import { AiObservabilityModule } from "./modules/ai-observability/ai-observabili
 import { AdminOpsModule } from "./modules/admin-ops/admin-ops.module";
 import { WidgetModule } from "./modules/widget/widget.module";
 import { SecurityObservabilityModule } from "./modules/security-observability/security-observability.module";
+import { BrandPanelModule } from "./modules/Brand-panel/brand-panel.module";
 
 
 
@@ -139,6 +140,7 @@ import { SecurityObservabilityModule } from "./modules/security-observability/se
     AdminOpsModule,
     WidgetModule,
     SecurityObservabilityModule,
+    BrandPanelModule,
   ],
   controllers: [AppController],
   providers: [
