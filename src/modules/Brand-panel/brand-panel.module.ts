@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { StorageModule } from '../../shared/storage/storage.module';
 import { UploadsModule } from '../uploads/uploads.module';
@@ -15,6 +16,8 @@ import { BrandUploadController } from './upload/brand-upload.controller';
 
 // Services
 import { BrandAuthService } from './auth/brand-auth.service';
+import { BrandJwtStrategy } from './auth/brand-jwt.strategy';
+import { BrandAuthGuard } from './auth/brand-auth.guard';
 import { BrandProfileService } from './profile/brand-profile.service';
 import { BrandCatalogService } from './catalog/brand-catalog.service';
 import { BrandAnalyticsService } from './analytics/brand-analytics.service';
@@ -28,6 +31,8 @@ import { BrandUploadService } from './upload/brand-upload.service';
     PrismaModule,
     StorageModule.register(),
     UploadsModule,
+    // No default secret: BrandJwtStrategy always passes its own, so brand tokens never share the user secret.
+    JwtModule.register({}),
   ],
   controllers: [
     BrandAuthController,
@@ -41,6 +46,8 @@ import { BrandUploadService } from './upload/brand-upload.service';
   ],
   providers: [
     BrandAuthService,
+    BrandJwtStrategy,
+    BrandAuthGuard,
     BrandProfileService,
     BrandCatalogService,
     BrandAnalyticsService,
@@ -51,6 +58,8 @@ import { BrandUploadService } from './upload/brand-upload.service';
   ],
   exports: [
     BrandAuthService,
+    BrandJwtStrategy,
+    BrandAuthGuard,
     BrandProfileService,
     BrandCatalogService,
     BrandAnalyticsService,

@@ -1,61 +1,44 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BrandCatalogService } from './brand-catalog.service';
 import { CreateGarmentDto, UpdateGarmentDto } from '../dto/brand-common.dto';
+import { BrandAuthGuard, CurrentBrand } from '../auth/brand-auth.guard';
+import { AuthenticatedBrand } from '../auth/brand-jwt.strategy';
 
 @ApiTags('Brand Panel — Catalog & Garment Inventory')
+@ApiBearerAuth()
+@UseGuards(BrandAuthGuard)
 @Controller('brand/catalog')
 export class BrandCatalogController {
   constructor(private readonly catalogService: BrandCatalogService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all luxury garments in brand inventory' })
-  async findAll() {
-    const data = await this.catalogService.findAll();
-    return {
-      message: 'Catalog fetched successfully',
-      data,
-    };
+  @ApiOperation({ summary: "List the brand's garments" })
+  async findAll(@CurrentBrand() brand: AuthenticatedBrand) {
+    return { message: 'Catalog fetched successfully', data: await this.catalogService.findAll(brand.brandId) };
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get details of a single garment' })
-  async findOne(@Param('id') id: string) {
-    const data = await this.catalogService.findOne(id);
-    return {
-      message: 'Garment details fetched successfully',
-      data,
-    };
+  async findOne(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string) {
+    return { message: 'Garment details fetched successfully', data: await this.catalogService.findOne(brand.brandId, id) };
   }
 
   @Post()
-  @ApiOperation({ summary: 'Add a new luxury garment with D2C Buy URL' })
-  async create(@Body() dto: CreateGarmentDto) {
-    const data = await this.catalogService.create(dto);
-    return {
-      message: 'Garment added to catalog successfully',
-      data,
-    };
+  @ApiOperation({ summary: 'Add a garment with its Buy URL' })
+  async create(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: CreateGarmentDto) {
+    return { message: 'Garment added to catalog successfully', data: await this.catalogService.create(brand.brandId, dto) };
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update garment pricing, stock or Buy link' })
-  async update(@Param('id') id: string, @Body() dto: UpdateGarmentDto) {
-    const data = await this.catalogService.update(id, dto);
-    return {
-      message: 'Garment updated successfully',
-      data,
-    };
+  async update(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string, @Body() dto: UpdateGarmentDto) {
+    return { message: 'Garment updated successfully', data: await this.catalogService.update(brand.brandId, id, dto) };
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove a garment from catalog' })
-  async remove(@Param('id') id: string) {
-    const data = await this.catalogService.remove(id);
-    return {
-      message: 'Garment removed from catalog',
-      data,
-    };
+  @ApiOperation({ summary: 'Remove a garment from the catalog' })
+  async remove(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string) {
+    return { message: 'Garment removed from catalog', data: await this.catalogService.remove(brand.brandId, id) };
   }
 }
-

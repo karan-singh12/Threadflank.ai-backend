@@ -1,32 +1,27 @@
-import { Controller, Get, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BrandAiStudioService } from './brand-ai-studio.service';
 import { SimulateVideoDto } from '../dto/brand-common.dto';
+import { BrandAuthGuard, CurrentBrand } from '../auth/brand-auth.guard';
+import { AuthenticatedBrand } from '../auth/brand-jwt.strategy';
 
 @ApiTags('Brand Panel — AI Video Studio (Veo-2 Motion)')
+@ApiBearerAuth()
+@UseGuards(BrandAuthGuard)
 @Controller('brand/ai-studio')
 export class BrandAiStudioController {
   constructor(private readonly aiStudioService: BrandAiStudioService) {}
 
   @Get('presets')
-  @ApiOperation({ summary: 'List curated Veo-2 motion camera and lighting presets' })
+  @ApiOperation({ summary: 'List curated motion camera and lighting presets' })
   getPresets() {
-    const data = this.aiStudioService.getPresets();
-    return {
-      message: 'Motion presets retrieved',
-      data,
-    };
+    return { message: 'Motion presets retrieved', data: this.aiStudioService.getPresets() };
   }
 
   @Post('simulate')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Run high-fidelity Veo-2 cinematic motion video simulation' })
-  async simulate(@Body() dto: SimulateVideoDto) {
-    const data = await this.aiStudioService.simulateVideo(dto);
-    return {
-      message: 'Simulation generated successfully',
-      data,
-    };
+  @ApiOperation({ summary: 'Run a cinematic motion video simulation (charges credits)' })
+  async simulate(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: SimulateVideoDto) {
+    return { message: 'Simulation generated successfully', data: await this.aiStudioService.simulateVideo(brand.brandId, dto) };
   }
 }
-

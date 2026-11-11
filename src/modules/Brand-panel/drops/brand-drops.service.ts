@@ -15,62 +15,33 @@ export interface LaunchDropEntity {
   countdownDays?: number;
 }
 
+/** Per-brand, in-memory drops (reset on restart) until a BrandDrop table exists. */
 @Injectable()
 export class BrandDropsService {
-  private drops: LaunchDropEntity[] = [
-    {
-      id: 'drop_nov_26',
-      title: "Kashi Heritage Wedding Collection '26",
-      collectionName: 'The Royal Banaras Chapter',
-      description: 'Handwoven brocade and tissue lehengas crafted for the upcoming bridal season.',
-      launchDate: new Date(Date.now() + 1000 * 60 * 60 * 36).toISOString(),
-      waitlistCount: 2480,
-      status: 'scheduled',
-      bannerUrl: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1200&auto=format&fit=crop&q=80',
-      productsCount: 12,
-      skuCount: 24,
-      countdownDays: 2,
-    },
-    {
-      id: 'drop_diwali_26',
-      title: 'Diwali Sparkle Festive Capsule',
-      collectionName: 'Noor Organza',
-      description: 'Luminous sheer organza sarees and angrakhas dipped in natural pastels.',
-      launchDate: new Date(Date.now() - 1000 * 60 * 60 * 120).toISOString(),
-      waitlistCount: 4910,
-      status: 'live',
-      bannerUrl: 'https://images.unsplash.com/photo-1544441893-675973e31985?w=1200&auto=format&fit=crop&q=80',
-      productsCount: 8,
-      skuCount: 16,
-      countdownDays: 0,
-    },
-  ];
+  private readonly byBrand = new Map<string, LaunchDropEntity[]>();
 
-  findAll(): LaunchDropEntity[] {
-    return this.drops;
+  private withStatus(drop: LaunchDropEntity): LaunchDropEntity {
+    const msLeft = new Date(drop.launchDate).getTime() - Date.now();
+    return { ...drop, status: msLeft <= 0 ? 'live' : 'scheduled', countdownDays: Math.max(0, Math.ceil(msLeft / 86_400_000)) };
   }
 
-  create(dto: CreateDropDto): LaunchDropEntity {
-    const launchTime = new Date(dto.launchDate).getTime();
-    const isLive = launchTime <= Date.now();
-    const countdownDays = Math.max(0, Math.ceil((launchTime - Date.now()) / (1000 * 60 * 60 * 24)));
+  findAll(brandId: string): LaunchDropEntity[] {
+    return (this.byBrand.get(brandId) ?? []).map((d) => this.withStatus(d));
+  }
 
-    const newDrop: LaunchDropEntity = {
-      id: `drop_${Date.now()}`,
+  create(brandId: string, dto: CreateDropDto): LaunchDropEntity {
+    const drop: LaunchDropEntity = {
+      id: `drop_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
       title: dto.title,
       collectionName: dto.collectionName,
       description: dto.description,
       launchDate: dto.launchDate,
       waitlistCount: 0,
-      status: isLive ? 'live' : 'scheduled',
+      status: 'scheduled',
       bannerUrl: dto.bannerUrl,
       productsCount: dto.productsCount || 1,
-      skuCount: (dto.productsCount || 1) * 2,
-      countdownDays,
     };
-
-    this.drops.unshift(newDrop);
-    return newDrop;
+    this.byBrand.set(brandId, [drop, ...(this.byBrand.get(brandId) ?? [])]);
+    return this.withStatus(drop);
   }
 }
-

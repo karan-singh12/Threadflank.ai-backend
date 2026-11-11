@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail, MinLength, MaxLength, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateBrandProfileDto {
@@ -50,7 +50,7 @@ export class UpdateBrandProfileDto {
 
 export class BrandLoginDto {
   @ApiProperty({ example: 'atelier@rawmango.com' })
-  @IsString()
+  @IsEmail()
   email!: string;
 
   @ApiProperty({ example: 'luxury2026' })
@@ -58,9 +58,17 @@ export class BrandLoginDto {
   password!: string;
 }
 
+export class BrandRefreshTokenDto {
+  @ApiProperty()
+  @IsString()
+  refreshToken!: string;
+}
+
 export class RegisterBrandDto {
   @ApiProperty({ example: 'Raw Mango Atelier' })
   @IsString()
+  @MinLength(2)
+  @MaxLength(80)
   name!: string;
 
   @ApiPropertyOptional({ example: 'raw-mango' })
@@ -69,11 +77,13 @@ export class RegisterBrandDto {
   slug?: string;
 
   @ApiProperty({ example: 'atelier@rawmango.com' })
-  @IsString()
+  @IsEmail()
   email!: string;
 
   @ApiProperty({ example: 'luxury2026' })
   @IsString()
+  @MinLength(8)
+  @MaxLength(72) // bcrypt ignores everything past 72 bytes
   password!: string;
 
   @ApiPropertyOptional({ example: 'Ethnic Wear' })
