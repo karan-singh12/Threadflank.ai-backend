@@ -1,7 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateGarmentDto, UpdateGarmentDto } from '../dto/brand-common.dto';
-import { BrandAuthService } from '../auth/brand-auth.service';
 
 export interface ProductItemEntity {
   id: string;
@@ -25,220 +23,88 @@ export interface ProductItemEntity {
   newDrop: boolean;
 }
 
+/**
+ * Per-brand, in-memory catalog (resets on restart) until a BrandProduct table exists.
+ * Keyed by brandId so one brand can never read or change another brand's garments.
+ */
 @Injectable()
 export class BrandCatalogService {
-  // In-memory backing cache synchronized with initial luxury catalog
-  private products: ProductItemEntity[] = [
-    {
-      id: 'prod_01',
-      title: 'Varanasi Gold Zari Tissue Lehenga',
-      sku: 'RM-LEH-01',
-      price: 84000,
-      originalPrice: 95000,
-      images: [
-        'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=800&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80',
-      ],
-      category: 'Ethnic Wear',
-      occasions: ['Shaadi', 'Reception', 'Sangeet'],
-      colors: ['Antique Gold', 'Blush Pink'],
-      sizes: ['XS', 'S', 'M', 'L', 'Custom'],
-      stock: 14,
-      isDrapeReady: true,
-      drapeScore: 98,
-      fitScore: 95,
-      drapesCount: 3840,
-      clicksCount: 520,
-      buyUrl: 'https://rawmango.com/shop/lehengas/varanasi-gold',
-      featured: true,
-      newDrop: true,
-    },
-    {
-      id: 'prod_02',
-      title: 'Gulab Chanderi Silk Kurta Set',
-      sku: 'RM-KRT-09',
-      price: 32000,
-      images: [
-        'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?w=800&auto=format&fit=crop&q=80',
-      ],
-      category: 'Suits & Sets',
-      occasions: ['Mehendi', 'Haldi', 'Diwali'],
-      colors: ['Rani Pink', 'Emerald Green'],
-      sizes: ['S', 'M', 'L', 'XL'],
-      stock: 28,
-      isDrapeReady: true,
-      drapeScore: 94,
-      fitScore: 92,
-      drapesCount: 2910,
-      clicksCount: 410,
-      buyUrl: 'https://rawmango.com/shop/sets/gulab-chanderi',
-      featured: true,
-      newDrop: false,
-    },
-    {
-      id: 'prod_03',
-      title: 'Pithora Hand-Painted Silk Organza Saree',
-      sku: 'RM-SAR-44',
-      price: 48000,
-      images: [
-        'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80',
-      ],
-      category: 'Sarees',
-      occasions: ['Cocktail', 'Reception', 'Engagement'],
-      colors: ['Ivory Mist', 'Sage Green'],
-      sizes: ['Free Size'],
-      stock: 8,
-      isDrapeReady: true,
-      drapeScore: 96,
-      fitScore: 98,
-      drapesCount: 4210,
-      clicksCount: 680,
-      buyUrl: 'https://rawmango.com/shop/sarees/pithora-organza',
-      featured: true,
-      newDrop: true,
-    },
-    {
-      id: 'prod_04',
-      title: 'Marigold Brocade Sherwani & Stole',
-      sku: 'RM-SHR-03',
-      price: 92000,
-      images: [
-        'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&auto=format&fit=crop&q=80',
-      ],
-      category: 'Menswear',
-      occasions: ['Shaadi', 'Sangeet'],
-      colors: ['Ochre Gold', 'Deep Maroon'],
-      sizes: ['38', '40', '42', '44'],
-      stock: 5,
-      isDrapeReady: false,
-      drapeScore: 68,
-      fitScore: 70,
-      drapesCount: 890,
-      clicksCount: 110,
-      buyUrl: 'https://rawmango.com/shop/mens/marigold-sherwani',
-      featured: false,
-      newDrop: true,
-    },
-    {
-      id: 'prod_05',
-      title: 'Neelambari Velvet Jacket & Sharara',
-      sku: 'RM-JKT-18',
-      price: 54000,
-      images: [
-        'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=800&auto=format&fit=crop&q=80',
-      ],
-      category: 'Indo-Western',
-      occasions: ['Cocktail', 'Sangeet'],
-      colors: ['Midnight Blue', 'Aubergine'],
-      sizes: ['XS', 'S', 'M', 'L'],
-      stock: 12,
-      isDrapeReady: true,
-      drapeScore: 92,
-      fitScore: 89,
-      drapesCount: 1980,
-      clicksCount: 340,
-      buyUrl: 'https://rawmango.com/shop/indo-western/neelambari',
-      featured: false,
-      newDrop: false,
-    },
-  ];
+  private readonly byBrand = new Map<string, ProductItemEntity[]>();
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly authService: BrandAuthService,
-  ) {}
-
-  async findAll(): Promise<ProductItemEntity[]> {
-    return this.products;
+  private list(brandId: string): ProductItemEntity[] {
+    let items = this.byBrand.get(brandId);
+    if (!items) {
+      items = [];
+      this.byBrand.set(brandId, items);
+    }
+    return items;
   }
 
-  async findOne(id: string): Promise<ProductItemEntity> {
-    const item = this.products.find((p) => p.id === id);
-    if (!item) {
-      throw new NotFoundException(`Garment with ID ${id} not found in catalog.`);
-    }
+  async findAll(brandId: string): Promise<ProductItemEntity[]> {
+    return [...this.list(brandId)];
+  }
+
+  async findOne(brandId: string, id: string): Promise<ProductItemEntity> {
+    const item = this.list(brandId).find((p) => p.id === id);
+    if (!item) throw new NotFoundException(`Garment with ID ${id} not found in catalog.`);
     return item;
   }
 
-  async create(dto: CreateGarmentDto): Promise<ProductItemEntity> {
-    const newId = `prod_${Date.now()}`;
+  async create(brandId: string, dto: CreateGarmentDto): Promise<ProductItemEntity> {
     const garment: ProductItemEntity = {
-      id: newId,
+      id: `prod_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
       title: dto.title,
-      sku: dto.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+      sku: dto.sku,
       price: dto.price,
       originalPrice: dto.originalPrice,
-      images: dto.images.length > 0 ? dto.images : ['https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b'],
-      category: dto.category || 'Ethnic Wear',
-      occasions: dto.occasions || ['Celebration'],
-      colors: dto.colors || ['Custom'],
-      sizes: dto.sizes || ['Free Size'],
-      stock: dto.stock ?? 10,
-      isDrapeReady: dto.isDrapeReady ?? true,
-      drapeScore: dto.drapeScore ?? 92,
-      fitScore: 90,
+      images: dto.images ?? [],
+      category: dto.category,
+      occasions: dto.occasions ?? [],
+      colors: dto.colors ?? [],
+      sizes: dto.sizes ?? [],
+      stock: dto.stock ?? 0,
+      isDrapeReady: dto.isDrapeReady ?? false,
+      drapeScore: dto.drapeScore ?? 0,
       drapesCount: 0,
       clicksCount: 0,
       buyUrl: dto.buyUrl,
       featured: dto.featured ?? false,
       newDrop: dto.newDrop ?? true,
     };
-
-    this.products.unshift(garment);
+    this.list(brandId).unshift(garment);
     return garment;
   }
 
-  async update(id: string, dto: UpdateGarmentDto): Promise<ProductItemEntity> {
-    const index = this.products.findIndex((p) => p.id === id);
-    if (index === -1) {
-      throw new NotFoundException(`Garment with ID ${id} not found.`);
-    }
+  async update(brandId: string, id: string, dto: UpdateGarmentDto): Promise<ProductItemEntity> {
+    const items = this.list(brandId);
+    const index = items.findIndex((p) => p.id === id);
+    if (index === -1) throw new NotFoundException(`Garment with ID ${id} not found.`);
 
-    const current = this.products[index];
-    const updated: ProductItemEntity = {
-      ...current,
-      ...(dto.title !== undefined ? { title: dto.title } : {}),
-      ...(dto.sku !== undefined ? { sku: dto.sku } : {}),
-      ...(dto.price !== undefined ? { price: dto.price } : {}),
-      ...(dto.originalPrice !== undefined ? { originalPrice: dto.originalPrice } : {}),
-      ...(dto.images !== undefined ? { images: dto.images } : {}),
-      ...(dto.category !== undefined ? { category: dto.category } : {}),
-      ...(dto.occasions !== undefined ? { occasions: dto.occasions } : {}),
-      ...(dto.colors !== undefined ? { colors: dto.colors } : {}),
-      ...(dto.sizes !== undefined ? { sizes: dto.sizes } : {}),
-      ...(dto.stock !== undefined ? { stock: dto.stock } : {}),
-      ...(dto.isDrapeReady !== undefined ? { isDrapeReady: dto.isDrapeReady } : {}),
-      ...(dto.drapeScore !== undefined ? { drapeScore: dto.drapeScore } : {}),
-      ...(dto.buyUrl !== undefined ? { buyUrl: dto.buyUrl } : {}),
-      ...(dto.featured !== undefined ? { featured: dto.featured } : {}),
-      ...(dto.newDrop !== undefined ? { newDrop: dto.newDrop } : {}),
-    };
-
-    this.products[index] = updated;
-    return updated;
+    const defined = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
+    items[index] = { ...items[index], ...defined };
+    return items[index];
   }
 
-  async remove(id: string): Promise<{ success: boolean; id: string }> {
-    const initialLen = this.products.length;
-    this.products = this.products.filter((p) => p.id !== id);
-    if (this.products.length === initialLen) {
-      throw new NotFoundException(`Garment with ID ${id} not found.`);
-    }
+  async remove(brandId: string, id: string): Promise<{ success: boolean; id: string }> {
+    const items = this.list(brandId);
+    const index = items.findIndex((p) => p.id === id);
+    if (index === -1) throw new NotFoundException(`Garment with ID ${id} not found.`);
+    items.splice(index, 1);
     return { success: true, id };
   }
 
-  incrementClick(id: string) {
-    const garment = this.products.find((p) => p.id === id);
-    if (garment) {
-      garment.clicksCount = (garment.clicksCount || 0) + 1;
-    }
+  /** Returns false when the garment isn't this brand's, so callers can ignore foreign ids. */
+  incrementClick(brandId: string, id: string): boolean {
+    const garment = this.list(brandId).find((p) => p.id === id);
+    if (garment) garment.clicksCount += 1;
+    return Boolean(garment);
   }
 
-  incrementDrape(id: string) {
-    const garment = this.products.find((p) => p.id === id);
-    if (garment) {
-      garment.drapesCount = (garment.drapesCount || 0) + 1;
-    }
+  /** Total buy clicks and try-ons across this brand's garments. */
+  totals(brandId: string) {
+    return this.list(brandId).reduce(
+      (t, p) => ({ clicks: t.clicks + p.clicksCount, drapes: t.drapes + p.drapesCount }),
+      { clicks: 0, drapes: 0 },
+    );
   }
 }
-

@@ -1,136 +1,167 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { createHash } from 'crypto';
+import { Brand, BrandAccount } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BrandLoginDto, RegisterBrandDto } from '../dto/brand-common.dto';
+import { BRAND_AUTH, BrandJwtStrategy } from './brand-jwt.strategy';
+
+export interface RequestMeta {
+  ip?: string;
+  userAgent?: string;
+}
+
+const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+const INVALID_CREDENTIALS = 'Invalid email or password.';
+const FREE_WELCOME_CREDITS = 100;
 
 @Injectable()
 export class BrandAuthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly brandJwt: BrandJwtStrategy,
+  ) {}
 
-  async validateOrGetBrand(slug: string = 'raw-mango') {
-    let brand = await this.prisma.brand.findUnique({
-      where: { slug },
-      include: {
-        _count: {
-          select: { posts: true, stories: true, widgetSessions: true },
-        },
-      },
-    });
-
-    // If brand doesn't exist yet in DB, create it seamlessly so DB is always real & synchronized
-    if (!brand) {
-      brand = await this.prisma.brand.create({
-        data: {
-          name: 'Raw Mango Atelier',
-          slug: 'raw-mango',
-          category: 'Ethnic Wear',
-          isVerified: true,
-          description: 'Contemporary Indian luxury rooted in indigenous textile craft, re-imagining handwoven brocades, organza drapes and chanderi silhouettes for celebration.',
-          websiteUrl: 'https://rawmango.com',
-          logoUrl: 'https://images.unsplash.com/photo-1544441893-675973e31985?w=200&auto=format&fit=crop&q=80',
-          widgetEnabled: true,
-          socialLinks: {
-            instagram: 'https://instagram.com/raw_mango',
-            flagshipAddress: 'Lodhi Colony Market, New Delhi, India',
-            themeAccent: '#6342f0',
-            aiCredits: 420,
-            rankScore: 8450,
-          },
-        },
-        include: {
-          _count: {
-            select: { posts: true, stories: true, widgetSessions: true },
-          },
-        },
-      });
-    }
-
-    const social = (brand.socialLinks as any) || {};
-
+  /** The shape the brand panel reads. Values with no data source yet are 0/empty, not invented. */
+  toProfile(brand: Brand) {
+    const social = (brand.socialLinks as Record<string, any> | null) ?? {};
     return {
       id: brand.id,
       name: brand.name,
       slug: brand.slug,
-      logo: brand.logoUrl || 'https://images.unsplash.com/photo-1544441893-675973e31985?w=200&auto=format&fit=crop&q=80',
-      banner: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600&auto=format&fit=crop&q=80',
-      story: brand.description || '',
+      logo: brand.logoUrl ?? '',
+      banner: social.banner ?? '',
+      story: brand.description ?? '',
       verified: brand.isVerified,
-      themeAccent: social.themeAccent || '#6342f0',
-      announcementText: social.announcementText || "Diwali & Shaadi Edit '26 is now live for Drape Virtual Try-On! Enjoy complimentary styling consultations.",
-      websiteUrl: brand.websiteUrl || 'https://rawmango.com',
-      physicalStoreAddress: social.flagshipAddress || 'Lodhi Colony Market, New Delhi, India',
-      isOnlineOnly: social.isOnlineOnly ?? false,
-      followersCount: 14850,
-      aiCredits: social.aiCredits ?? 420,
-      currentRank: 6,
-      totalBrands: 240,
-      rankScore: social.rankScore ?? 8450,
+      themeAccent: social.themeAccent ?? '#6342f0',
+      announcementText: social.announcementText ?? '',
+      websiteUrl: brand.websiteUrl ?? '',
+      physicalStoreAddress: social.flagshipAddress ?? '',
+      isOnlineOnly: social.isOnlineOnly ?? !social.flagshipAddress,
+      followersCount: 0,
+      aiCredits: social.aiCredits ?? 0,
+      currentRank: 0,
+      totalBrands: 0,
+      rankScore: social.rankScore ?? 0,
       widgetKey: brand.widgetKey,
       widgetEnabled: brand.widgetEnabled,
     };
   }
 
-  async register(dto: RegisterBrandDto) {
-    const slug =
-      dto.slug?.toLowerCase().trim() ||
-      dto.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
+  async getProfile(brandId: string) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId } });
+    if (!brand || brand.isDeleted) throw new NotFoundException('Brand not found.');
+    return this.toProfile(brand);
+  }
 
-    const existing = await this.prisma.brand.findUnique({ where: { slug } });
-    if (existing) {
-      throw new BadRequestException(`An Atelier with slug "${slug}" or name "${dto.name}" already exists.`);
-    }
+  private accountView(account: BrandAccount) {
+    return { id: account.id, email: account.email, name: account.name, role: account.role };
+  }
 
-    const created = await this.prisma.brand.create({
+  private async issueTokenPair(account: BrandAccount, meta: RequestMeta) {
+    const payload = { brandAccountId: account.id, brandId: account.brandId, email: account.email, role: account.role, typ: 'brand' as const };
+    const [accessToken, refreshToken] = await Promise.all([this.brandJwt.signAccessToken(payload), this.brandJwt.signRefreshToken(payload)]);
+    await this.prisma.brandRefreshToken.create({
       data: {
-        name: dto.name,
-        slug,
-        category: dto.category || 'Luxury Fashion',
-        websiteUrl: dto.websiteUrl || '',
-        isVerified: false,
-        description: `Official atelier showcase for ${dto.name}. Experience virtual try-ons and collections.`,
-        logoUrl: 'https://images.unsplash.com/photo-1544441893-675973e31985?w=200&auto=format&fit=crop&q=80',
-        widgetEnabled: true,
-        socialLinks: {
-          workEmail: dto.email,
-          flagshipAddress: dto.physicalStoreAddress || '',
-          themeAccent: '#7c5cff',
-          aiCredits: 100, // 100 free welcome credits for new brands
-          rankScore: 1000,
-        },
+        brandAccountId: account.id,
+        tokenHash: hashToken(refreshToken),
+        userAgent: meta.userAgent ?? null,
+        ip: meta.ip ?? null,
+        expiresAt: new Date(Date.now() + BRAND_AUTH.refreshTokenExpiryMs),
       },
     });
-
-    const profile = await this.validateOrGetBrand(created.slug);
-
-    return {
-      token: `brand_jwt_token_${Buffer.from(created.id).toString('base64')}`,
-      brand: profile,
-      message: 'Atelier registered successfully! Welcome to ThreadFlank Brand OS.',
-    };
+    return { accessToken, refreshToken };
   }
 
-  async login(dto: BrandLoginDto) {
-    // Atelier master demo credentials or database lookup
-    if (
-      dto.email.toLowerCase().includes('rawmango') ||
-      dto.email.toLowerCase().includes('brand') ||
-      dto.password === 'luxury2026' ||
-      dto.password.length >= 6
-    ) {
-      const profile = await this.validateOrGetBrand('raw-mango');
-      return {
-        token: `brand_jwt_token_${Buffer.from(profile.id).toString('base64')}`,
-        brand: profile,
-      };
+  async register(dto: RegisterBrandDto, meta: RequestMeta) {
+    const email = dto.email.trim().toLowerCase();
+    const slug = (dto.slug?.trim() || dto.name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    if (!slug) throw new BadRequestException('Enter a brand name using letters or numbers.');
+
+    if (await this.prisma.brandAccount.findUnique({ where: { email } })) {
+      throw new ConflictException('An account with this email already exists. Sign in instead.');
+    }
+    if (await this.prisma.brand.findUnique({ where: { slug } })) {
+      throw new ConflictException(`A brand named "${dto.name}" already exists. Choose a different name or link.`);
     }
 
-    throw new UnauthorizedException('Invalid brand credentials. Please check your Atelier email and security key.');
+    const password = await bcrypt.hash(dto.password, 10);
+    const { brand, account } = await this.prisma.$transaction(async (tx) => {
+      const brand = await tx.brand.create({
+        data: {
+          name: dto.name.trim(),
+          slug,
+          category: dto.category || null,
+          websiteUrl: dto.websiteUrl || null,
+          isVerified: false,
+          widgetEnabled: true,
+          socialLinks: {
+            workEmail: email,
+            flagshipAddress: dto.physicalStoreAddress || '',
+            themeAccent: '#7c5cff',
+            aiCredits: FREE_WELCOME_CREDITS,
+            rankScore: 0,
+          },
+        },
+      });
+      const account = await tx.brandAccount.create({
+        data: { brandId: brand.id, email, password, name: dto.name.trim(), role: 'OWNER' },
+      });
+      return { brand, account };
+    });
+
+    const tokens = await this.issueTokenPair(account, meta);
+    return { ...tokens, account: this.accountView(account), brand: this.toProfile(brand) };
   }
 
-  async getMe() {
-    return this.validateOrGetBrand('raw-mango');
+  async login(dto: BrandLoginDto, meta: RequestMeta) {
+    const account = await this.prisma.brandAccount.findUnique({
+      where: { email: dto.email.trim().toLowerCase() },
+      include: { brand: true },
+    });
+    // One message for unknown email and wrong password, so this can't be used to probe accounts.
+    if (!account || !(await bcrypt.compare(dto.password, account.password))) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
+    if (!account.isActive || account.brand.isDeleted || account.brand.status !== 'ACTIVE') {
+      throw new ForbiddenException('This brand account is disabled. Contact Threadflank support.');
+    }
+
+    const tokens = await this.issueTokenPair(account, meta);
+    await this.prisma.brandAccount.update({ where: { id: account.id }, data: { lastLoginAt: new Date() } });
+    return { ...tokens, account: this.accountView(account), brand: this.toProfile(account.brand) };
+  }
+
+  async refresh(refreshToken: string, meta: RequestMeta) {
+    const payload = await this.brandJwt.verifyRefreshToken(refreshToken);
+    const stored = await this.prisma.brandRefreshToken.findFirst({
+      where: { brandAccountId: payload.brandAccountId, tokenHash: hashToken(refreshToken), revokedAt: null },
+    });
+    if (!stored || stored.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token is invalid or expired. Please sign in again.');
+    }
+    const account = await this.prisma.brandAccount.findUnique({ where: { id: payload.brandAccountId }, include: { brand: true } });
+    if (!account || !account.isActive || account.brand.isDeleted || account.brand.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Refresh token is invalid or expired. Please sign in again.');
+    }
+    // Rotate: the used refresh token can never be replayed.
+    await this.prisma.brandRefreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
+    return this.issueTokenPair(account, meta);
+  }
+
+  async logout(refreshToken: string) {
+    await this.prisma.brandRefreshToken.updateMany({
+      where: { tokenHash: hashToken(refreshToken), revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  async me(brandAccountId: string, brandId: string) {
+    const account = await this.prisma.brandAccount.findUnique({ where: { id: brandAccountId } });
+    if (!account || !account.isActive || account.brandId !== brandId) throw new UnauthorizedException('Sign in to continue.');
+    return { account: this.accountView(account), brand: await this.getProfile(brandId) };
   }
 }
-

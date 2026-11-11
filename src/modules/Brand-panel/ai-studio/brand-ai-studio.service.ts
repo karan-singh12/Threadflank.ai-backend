@@ -1,7 +1,6 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SimulateVideoDto } from '../dto/brand-common.dto';
-import { BrandAuthService } from '../auth/brand-auth.service';
 import { BrandCatalogService } from '../catalog/brand-catalog.service';
 
 export interface MotionPreset {
@@ -62,7 +61,6 @@ export class BrandAiStudioService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly authService: BrandAuthService,
     private readonly catalogService: BrandCatalogService,
   ) {}
 
@@ -70,53 +68,25 @@ export class BrandAiStudioService {
     return this.presets;
   }
 
-  async simulateVideo(dto: SimulateVideoDto) {
-    const brand = await this.authService.getMe();
+  async simulateVideo(brandId: string, dto: SimulateVideoDto) {
     const COST_PER_SIMULATION = 15;
 
-    if (brand.aiCredits < COST_PER_SIMULATION) {
-      throw new BadRequestException(
-        `Insufficient AI Credits (${brand.aiCredits} available). You need at least ${COST_PER_SIMULATION} credits to run a Veo-2 motion simulation.`,
-      );
+    // The source image is the uploaded photo or one of THIS brand's garments; never a made-up default.
+    let sourceImageUrl = dto.customImageUrl;
+    if (!sourceImageUrl && dto.garmentId) {
+      sourceImageUrl = (await this.catalogService.findOne(brandId, dto.garmentId)).images[0];
+    }
+    if (!sourceImageUrl) {
+      throw new BadRequestException('Choose a garment that has a photo, or upload one, before rendering.');
     }
 
-    // Determine target garment image
-    let targetImageUrl = dto.customImageUrl;
-    if (!targetImageUrl && dto.garmentId) {
-      try {
-        const garment = await this.catalogService.findOne(dto.garmentId);
-        targetImageUrl = garment.images[0];
-      } catch {
-        targetImageUrl = 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b';
-      }
-    }
-
-    if (!targetImageUrl) {
-      targetImageUrl = 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b';
-    }
-
-    // Deduct credits from brand profile
-    const remainingCredits = brand.aiCredits - COST_PER_SIMULATION;
-    try {
-      const dbBrand = await this.prisma.brand.findUnique({ where: { slug: 'raw-mango' } });
-      if (dbBrand) {
-        const social = ((dbBrand.socialLinks as any) || {});
-        social.aiCredits = remainingCredits;
-        await this.prisma.brand.update({
-          where: { slug: 'raw-mango' },
-          data: { socialLinks: social },
-        });
-      }
-    } catch {
-      // Non-blocking
-    }
-
+    const remainingCredits = await this.spendCredits(brandId, COST_PER_SIMULATION);
     const preset = this.presets.find((p) => p.id === dto.motionPreset) || this.presets[0];
-    const simulationId = `sim_${Date.now()}`;
 
-    // Return high-definition simulation result
+    // NOTE: the Veo-2 integration is not wired yet. The clip below is a placeholder sample;
+    // credits are still charged so the rest of the flow can be exercised.
     return {
-      simulationId,
+      simulationId: `sim_${Date.now()}`,
       status: 'completed',
       modelUsed: 'Veo-2 Motion Cinema (1080p)',
       presetUsed: preset.name,
@@ -125,15 +95,37 @@ export class BrandAiStudioService {
       enhancedPrompt: dto.promptEnhance
         ? `${dto.prompt || preset.promptSuggestion}, 8k photorealistic, 60fps cinematic lighting, ultra-realistic cloth physics`
         : dto.prompt,
-      sourceImageUrl: targetImageUrl,
-      // Sample high-quality fashion movement video link
-      previewVideoUrl:
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-      thumbnailUrl: targetImageUrl,
+      sourceImageUrl,
+      previewVideoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+      thumbnailUrl: sourceImageUrl,
       creditsDeducted: COST_PER_SIMULATION,
       remainingCredits,
       createdAt: new Date().toISOString(),
     };
   }
-}
 
+  /**
+   * Deducts credits stored on the brand row. Guarded by updatedAt so two renders racing on the
+   * same balance can't both spend the same credits.
+   */
+  private async spendCredits(brandId: string, cost: number): Promise<number> {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId } });
+    if (!brand || brand.isDeleted) throw new NotFoundException('Brand not found.');
+
+    const social = (brand.socialLinks as Record<string, any> | null) ?? {};
+    const credits: number = social.aiCredits ?? 0;
+    if (credits < cost) {
+      throw new BadRequestException(
+        `Insufficient AI Credits (${credits} available). You need at least ${cost} credits to run a motion simulation.`,
+      );
+    }
+
+    const remaining = credits - cost;
+    const { count } = await this.prisma.brand.updateMany({
+      where: { id: brandId, updatedAt: brand.updatedAt },
+      data: { socialLinks: { ...social, aiCredits: remaining } },
+    });
+    if (count === 0) throw new ConflictException('Your credits changed while rendering. Please try again.');
+    return remaining;
+  }
+}

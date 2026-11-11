@@ -1,9 +1,12 @@
-import { Controller, Post, Body, Req, UseInterceptors, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBody } from '@nestjs/swagger';
+import { Controller, Post, Body, Req, UseInterceptors, UseGuards, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { BrandAuthGuard } from '../auth/brand-auth.guard';
 import { BrandUploadService } from './brand-upload.service';
 import { MultipartInterceptor } from '../../../common/interceptors/multipart.interceptor';
 
 @ApiTags('Brand Panel — Cloudflare R2 & Storage Uploads')
+@ApiBearerAuth()
+@UseGuards(BrandAuthGuard)
 @Controller('brand/upload')
 export class BrandUploadController {
   constructor(private readonly uploadService: BrandUploadService) {}
