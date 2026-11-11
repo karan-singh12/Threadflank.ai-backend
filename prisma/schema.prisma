@@ -495,6 +495,7 @@ model Brand {
   widgetDomains  Json?    // Allowed storefront origins, e.g. ["https://shop.example.com"]
 
   managers       BrandManagerAssignment[]
+  accounts       BrandAccount[]
   posts          BrandPost[]
   stories        BrandStory[]
   widgetSessions BrandWidgetSession[]
@@ -513,6 +514,48 @@ model BrandManagerAssignment {
   brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@unique([adminUserId, brandId])
+}
+
+// ─── Brand panel accounts ────────────────────────────────────────────────────
+// A brand's own login (separate from User and AdminUser). One Brand can have several accounts.
+
+enum BrandAccountRole {
+  OWNER
+  MANAGER
+}
+
+model BrandAccount {
+  id          String           @id @default(cuid())
+  brandId     String
+  email       String           @unique
+  password    String
+  name        String
+  role        BrandAccountRole @default(OWNER)
+  isActive    Boolean          @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  brand         Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  refreshTokens BrandRefreshToken[]
+
+  @@index([brandId])
+}
+
+model BrandRefreshToken {
+  id             String    @id @default(cuid())
+  brandAccountId String
+  tokenHash      String
+  userAgent      String?
+  ip             String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  brandAccount BrandAccount @relation(fields: [brandAccountId], references: [id], onDelete: Cascade)
+
+  @@index([brandAccountId])
+  @@index([tokenHash])
 }
 
 // ─── Brand Editorial Posts ────────────────────────────────────────────────────
