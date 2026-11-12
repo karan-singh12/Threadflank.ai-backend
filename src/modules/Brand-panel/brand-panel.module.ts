@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { MailerModule } from '../../shared/mailer/mailer.module';
+import { AppLogger } from '../../shared/logger/logger.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { StorageModule } from '../../shared/storage/storage.module';
 import { UploadsModule } from '../uploads/uploads.module';
@@ -31,6 +33,7 @@ import { BrandUploadService } from './upload/brand-upload.service';
     PrismaModule,
     StorageModule.register(),
     UploadsModule,
+    MailerModule,
     // No default secret: BrandJwtStrategy always passes its own, so brand tokens never share the user secret.
     JwtModule.register({}),
   ],
@@ -45,6 +48,7 @@ import { BrandUploadService } from './upload/brand-upload.service';
     BrandUploadController,
   ],
   providers: [
+    AppLogger,
     BrandAuthService,
     BrandJwtStrategy,
     BrandAuthGuard,

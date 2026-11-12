@@ -64,6 +64,30 @@ export class BrandRefreshTokenDto {
   refreshToken!: string;
 }
 
+export class BrandVerifyEmailDto {
+  @ApiProperty()
+  @IsString()
+  token!: string;
+}
+
+export class BrandEmailDto {
+  @ApiProperty({ example: 'atelier@rawmango.com' })
+  @IsEmail()
+  email!: string;
+}
+
+export class BrandResetPasswordDto {
+  @ApiProperty()
+  @IsString()
+  token!: string;
+
+  @ApiProperty({ example: 'luxury2026' })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  newPassword!: string;
+}
+
 export class RegisterBrandDto {
   @ApiProperty({ example: 'Raw Mango Atelier' })
   @IsString()
