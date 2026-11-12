@@ -1,5 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
-import { JwtStrategy } from '../../auth/strategies/jwt.strategy';
+import { JwtStrategy } from '../../modules/User-panel/auth/strategies/jwt.strategy';
 import { AuthenticatedUser } from '../interfaces/jwt-payload.interface';
 
 /**

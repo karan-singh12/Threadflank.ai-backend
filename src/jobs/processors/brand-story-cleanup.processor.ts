@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { BrandStoriesService } from '../../modules/brand-stories/brand-stories.service';
+import { BrandStoriesService } from '../../modules/Admin-panel/brand-stories/brand-stories.service';
 import { AppLogger } from '../../shared/logger/logger.service';
 
 /** Purges brand stories that expired more than 7 days ago. Active/expired-but-recent
