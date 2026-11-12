@@ -138,6 +138,58 @@ const psql = (sql) => execSync(`docker exec outfit-postgres psql -U outfit -d ou
   check('showcase includes the brand drop, not joined', mine?.drops?.[0]?.id === d1.data.id && mine.drops[0].joined === false);
   check('showcase has no private fields or SKUs', !/workEmail|aiCredits|verification|"sku"/.test(JSON.stringify(show.json)));
 
+  console.log('\n[8c] Catalog item = post (description, draft/live)');
+  const withDesc = await call('POST', '/brand/catalog', garment('SKU-DESC', { title: 'Festive Anarkali', description: 'Hand-woven silk, made for festive evenings.', status: 'DRAFT' }), tokA);
+  check('create a draft piece with a description', withDesc.status < 300 && withDesc.data?.status === 'DRAFT' && withDesc.data?.description === 'Hand-woven silk, made for festive evenings.', JSON.stringify(withDesc.json).slice(0, 160));
+  const pubTitles = async () => ((await call('GET', `/brands/${slugA}/catalog`)).data?.products ?? []).map((p) => p.title);
+  check('a draft is hidden from shoppers', !(await pubTitles()).includes('Festive Anarkali'));
+  check('a draft is hidden from the showcase', !JSON.stringify((await call('GET', '/brands/showcase')).json).includes('Festive Anarkali'));
+  check('a draft Buy redirect refuses (404)', (await fetch(BASE + `/brands/products/${withDesc.data.id}/go`, { redirect: 'manual' })).status === 404);
+  check('the brand still sees its draft', (await call('GET', '/brand/catalog', null, tokA)).data?.some((p) => p.title === 'Festive Anarkali' && p.status === 'DRAFT'));
+  check('invalid status rejected', (await call('PATCH', `/brand/catalog/${withDesc.data.id}`, { status: 'SCHEDULED' }, tokA)).status === 400);
+  const live = await call('PATCH', `/brand/catalog/${withDesc.data.id}`, { status: 'PUBLISHED' }, tokA);
+  check('going live works', live.data?.status === 'PUBLISHED');
+  const afterLive = (await call('GET', `/brands/${slugA}/catalog`)).data?.products?.find((p) => p.title === 'Festive Anarkali');
+  check('a live piece shows to shoppers with its description', afterLive?.description === 'Hand-woven silk, made for festive evenings.' && afterLive?.likesCount === 0);
+  check('description over 2000 characters rejected', (await call('PATCH', `/brand/catalog/${withDesc.data.id}`, { description: 'x'.repeat(2001) }, tokA)).status === 400);
+  await call('DELETE', `/brand/catalog/${withDesc.data.id}`, null, tokA);
+
+  console.log('\n[8c] Pagination (cursor)');
+  const made = [];
+  for (let i = 0; i < 30; i++) {
+    const r = await call('POST', '/brand/catalog', garment('PG-' + String(i).padStart(2, '0'), { title: 'Paged piece ' + i }), tokA);
+    if (r.data?.id) made.push(r.data.id);
+  }
+  check('30 pieces created for paging', made.length === 30);
+  const seen = new Set();
+  let cur = '', pages = 0, firstTotal = null, badOrder = false, prev = '';
+  do {
+    const r = await call('GET', '/brand/catalog?limit=10&q=Paged' + (cur ? '&cursor=' + cur : ''), null, tokA);
+    if (pages === 0) firstTotal = r.json?.meta?.total;
+    for (const p of r.data || []) { seen.add(p.id); if (prev && p.createdAt > prev) badOrder = true; prev = p.createdAt; }
+    cur = r.json?.meta?.nextCursor || '';
+    pages++;
+  } while (cur && pages < 10);
+  check('brand catalog pages by cursor: 3 pages, 30 unique, total on first page', pages === 3 && seen.size === 30 && firstTotal === 30, pages + '/' + seen.size + '/' + firstTotal);
+  check('pages come newest first', !badOrder);
+  check('no paging params still returns the whole list', (await call('GET', '/brand/catalog', null, tokA)).data?.length >= 30);
+  check('bad cursor -> 400', (await call('GET', '/brand/catalog?cursor=zzz', null, tokA)).status === 400);
+  check('limit over 100 -> 400', (await call('GET', '/brand/catalog?limit=500', null, tokA)).status === 400);
+  const adminPg = await call('GET', '/admin-panel/brand-portal/brands/' + bA.id + '/catalog?limit=10', null, admin);
+  check('admin sees the brand catalog paged', adminPg.data?.length === 10 && Boolean(adminPg.json?.meta?.nextCursor) && adminPg.json?.meta?.total >= 30);
+  const feedSeen = new Set();
+  let fc = '', feedPages = 0, feedDup = 0;
+  do {
+    const r = await call('GET', '/brand-posts?limit=200' + (fc ? '&cursor=' + fc : ''));
+    for (const p of r.data || []) { if (feedSeen.has(p.id)) feedDup++; feedSeen.add(p.id); }
+    fc = r.json?.meta?.nextCursor || '';
+    feedPages++;
+  } while (fc && feedPages < 100);
+  check('feed cursor walks every live piece without repeats', feedSeen.size > 0 && feedDup === 0, feedSeen.size + ' pieces, ' + feedDup + ' repeats');
+  check('feed offset deep pages are refused', (await call('GET', '/brand-posts?page=500&limit=100')).status === 400);
+  for (const id of made) await call('DELETE', '/brand/catalog/' + id, null, tokA);
+  check('paging pieces cleaned up', (await call('GET', '/brand/catalog?q=Paged&limit=5', null, tokA)).data?.length === 0);
+
   console.log('\n[9] Drop waitlist (shopper)');
   const email = `qa-shopper-${ts}@local.test`;
   const su = await call('POST', '/user/auth/signup', { email, password: 'Shopper#2026', username: `qa${ts}` });
@@ -156,6 +208,69 @@ const psql = (sql) => execSync(`docker exec outfit-postgres psql -U outfit -d ou
   check('brand sees waitlist count', (await call('GET', '/brand/drops', null, tokA)).data?.[0]?.waitlistCount === 1);
   check('shopper sees joined=true', (await call('GET', `/brands/${slugA}/drops`, null, ut)).data?.[0]?.joined === true);
   check('leave waitlist', (await call('DELETE', `/brands/drops/${d1.data.id}/waitlist`, null, ut)).data?.waitlistCount === 0);
+
+  console.log('\n[9b] Admin-managed categories');
+  const catName = `QA Cat ${ts}`;
+  const cats = (kind = 'CATEGORY') => call('GET', `/admin-panel/brand-portal/../discover-categories?kind=${kind}`.replace('brand-portal/../', ''), null, admin);
+  const created = await call('POST', '/admin-panel/discover-categories', { kind: 'CATEGORY', name: catName }, admin);
+  check('admin adds a category', created.status < 300 && created.data?.name === catName, JSON.stringify(created.json).slice(0, 140));
+  check('adding it again (other casing) -> 409', (await call('POST', '/admin-panel/discover-categories', { kind: 'CATEGORY', name: catName.toUpperCase() }, admin)).status === 409);
+  check('too-short name -> 400', (await call('POST', '/admin-panel/discover-categories', { kind: 'CATEGORY', name: 'x' }, admin)).status === 400);
+  check('brand sees the new category in its picker', (await call('GET', '/brand/taxonomy', null, tokA)).data?.categories?.includes(catName));
+  check('shopper Discover lists it (with 0 pieces)', (await call('GET', '/discover/categories')).data?.find((c) => c.name === catName)?.count === 0);
+  check('piece with a category NOT in the list -> 400', (await call('POST', '/brand/catalog', garment('SKU-BADCAT', { category: 'Haute Couture Nonsense' }), tokA)).status === 400);
+  check('piece with an unknown occasion -> 400', (await call('POST', '/brand/catalog', garment('SKU-BADOCC', { category: catName, occasions: ['Nonexistent Fest'] }), tokA)).status === 400);
+  const inCat = await call('POST', '/brand/catalog', garment('SKU-INCAT', { title: 'Category Test Piece', category: catName.toLowerCase(), description: 'Feed test piece' }), tokA);
+  check('lower-case category is saved with the admin spelling', inCat.status < 300 && inCat.data?.category === catName, JSON.stringify(inCat.json).slice(0, 140));
+  check('the category now counts the live piece', (await call('GET', '/discover/categories')).data?.find((c) => c.name === catName)?.count === 1);
+  check('admin sees it used by 1 piece', (await cats()).data?.items?.find((c) => c.name === catName)?.itemCount === 1);
+  check('a used category cannot be deleted -> 409', (await call('DELETE', `/admin-panel/discover-categories/${created.data.id}`, null, admin)).status === 409);
+  const renamed = `${catName} Renamed`;
+  check('rename works', (await call('PATCH', `/admin-panel/discover-categories/${created.data.id}`, { name: renamed }, admin)).data?.name === renamed);
+  check('rename updates the piece too', (await call('GET', `/brand/catalog/${inCat.data.id}`, null, tokA)).data?.category === renamed);
+  const second = await call('POST', '/admin-panel/discover-categories', { kind: 'CATEGORY', name: `QA Second ${ts}` }, admin);
+  const order = ((await cats()).data?.items ?? []).map((c) => c.id);
+  const swapped = [...order]; const ia = swapped.indexOf(created.data.id), ib = swapped.indexOf(second.data.id); [swapped[ia], swapped[ib]] = [swapped[ib], swapped[ia]];
+  check('reorder is saved', (await call('POST', '/admin-panel/discover-categories/reorder', { kind: 'CATEGORY', ids: swapped }, admin)).status < 300);
+  const pubOrder = (await call('GET', '/discover/categories')).data.map((c) => c.id);
+  check('shoppers see the admin order', pubOrder.indexOf(second.data.id) < pubOrder.indexOf(created.data.id));
+  check('turn a category off', (await call('PATCH', `/admin-panel/discover-categories/${second.data.id}`, { isActive: false }, admin)).data?.isActive === false);
+  check('a turned-off category disappears for shoppers', !(await call('GET', '/discover/categories')).data.some((c) => c.id === second.data.id));
+  check('and cannot be chosen by a brand', (await call('POST', '/brand/catalog', garment('SKU-OFFCAT', { category: `QA Second ${ts}` }), tokA)).status === 400);
+  check('an unused category can be deleted', (await call('DELETE', `/admin-panel/discover-categories/${second.data.id}`, null, admin)).status < 300);
+  check('occasions list is managed the same way', (await call('POST', '/admin-panel/discover-categories', { kind: 'OCCASION', name: `QA Occasion ${ts}` }, admin)).status < 300);
+  const withOcc = await call('POST', '/brand/catalog', garment('SKU-OCC', { category: renamed, occasions: [`qa occasion ${ts}`] }), tokA);
+  check('a brand can tag the new occasion', withOcc.data?.occasions?.[0] === `QA Occasion ${ts}`, JSON.stringify(withOcc.json).slice(0, 120));
+  const unlisted = await call('POST', '/brand/catalog', garment('SKU-UNL', { category: renamed }), tokA);
+  check('unauthenticated users cannot manage categories', (await call('POST', '/admin-panel/discover-categories', { kind: 'CATEGORY', name: 'Sneaky' })).status === 401);
+
+  console.log('\n[9c] Discover feed (/brand-posts) reads the catalog');
+  const feed = await call('GET', `/brand-posts?category=${encodeURIComponent(renamed)}&limit=50`, null, ut);
+  const fp = feed.data?.find((p) => p.id === inCat.data.id);
+  check('the catalog piece shows in the feed, same id', Boolean(fp), JSON.stringify(feed.json).slice(0, 160));
+  check('feed shape the app expects', fp && fp.caption === 'Feed test piece' && Array.isArray(fp.images) && fp.brand?.slug === slugA && fp.status === 'PUBLISHED' && fp.likesCount === 0 && fp.likedByMe === false && Array.isArray(fp.taggedProducts));
+  check('Buy goes through the tracked redirect (hasBuyLink)', fp?.hasBuyLink === true);
+  check('category filter is case-insensitive', ((await call('GET', `/brand-posts?category=${encodeURIComponent(renamed.toUpperCase())}&limit=50`)).data ?? []).some((p) => p.id === inCat.data.id));
+  const like1 = await call('POST', `/brand-posts/${inCat.data.id}/like`, null, ut);
+  check('like', like1.data?.liked === true && like1.data?.likesCount === 1);
+  check('feed shows likedByMe and the count', (await call('GET', `/brand-posts/${inCat.data.id}`, null, ut)).data?.likedByMe === true);
+  check('unlike', (await call('POST', `/brand-posts/${inCat.data.id}/like`, null, ut)).data?.liked === false);
+  check('like needs login -> 401', (await call('POST', `/brand-posts/${inCat.data.id}/like`)).status === 401);
+  const cm = await call('POST', `/brand-posts/${inCat.data.id}/comments`, { content: 'Beautiful piece' }, ut);
+  check('comment', cm.status < 300 && cm.data?.content === 'Beautiful piece', JSON.stringify(cm.json).slice(0, 120));
+  check('comments list', (await call('GET', `/brand-posts/${inCat.data.id}/comments`)).data?.length === 1);
+  check('comment author is public-safe (no email)', !/@local\.test/.test(JSON.stringify((await call('GET', `/brand-posts/${inCat.data.id}/comments`)).json)));
+  check('delete own comment', (await call('DELETE', `/brand-posts/${inCat.data.id}/comments/${cm.data.id}`, null, ut)).data?.deleted === true);
+  check('share is counted', (await call('POST', `/brand-posts/${inCat.data.id}/share`)).data?.sharesCount === 1);
+  check('save to looks', (await call('POST', `/brand-posts/${inCat.data.id}/save`, null, ut)).data?.saved === true);
+  check('save again removes it', (await call('POST', `/brand-posts/${inCat.data.id}/save`, null, ut)).data?.saved === false);
+  psql(`update \\"BrandProduct\\" set \\"sourcePostId\\"='oldpost-${ts}' where id='${inCat.data.id}'`);
+  check('an old post link still opens the piece', (await call('GET', `/brand-posts/oldpost-${ts}`)).data?.id === inCat.data.id);
+  await call('PATCH', `/brand/catalog/${inCat.data.id}`, { status: 'DRAFT' }, tokA);
+  check('a draft leaves the feed', !((await call('GET', `/brand-posts?category=${encodeURIComponent(renamed)}&limit=50`)).data ?? []).some((p) => p.id === inCat.data.id));
+  check('and its post page is 404', (await call('GET', `/brand-posts/${inCat.data.id}`)).status === 404);
+  // Leave the brand's catalog as the later sections expect it (one piece).
+  for (const id of [inCat.data?.id, withOcc.data?.id, unlisted.data?.id].filter(Boolean)) await call('DELETE', `/brand/catalog/${id}`, null, tokA);
 
   console.log('\n[10] Runway auction');
   const slots = await call('GET', '/brand/bidding/slots', null, tokA);

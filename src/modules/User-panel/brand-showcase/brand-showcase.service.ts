@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { BrandCatalogService } from '../../Brand-panel/catalog/brand-catalog.service';
+import { BrandCatalogService, type PublicProduct } from '../../Brand-panel/catalog/brand-catalog.service';
+import { candidatesFromBrand } from '../../Brand-panel/catalog/post-catalog';
 import { BrandDropsService } from '../../Brand-panel/drops/brand-drops.service';
 import { BrandBiddingService } from '../../Brand-panel/bidding/brand-bidding.service';
 import { PUBLIC_BRAND_SELECT, toPublicBrand } from '../../Admin-panel/brands/public-brand';
@@ -13,6 +14,41 @@ export class BrandShowcaseService {
     private readonly dropsSvc: BrandDropsService,
     private readonly biddingSvc: BrandBiddingService,
   ) {}
+
+  /**
+   * A brand's real catalog rows; until it has any, the pieces its admin-added posts already show.
+   * Those post-derived items are not saved (run npm run backfill:catalog to save them) and have no Buy link of their own.
+   */
+  private async productsFor(brand: { id: string; name: string; category: string | null; websiteUrl: string | null }, limit: number): Promise<PublicProduct[]> {
+    const own = await this.catalogSvc.listPublic(brand.id, limit);
+    if (own.length > 0) return own;
+    const posts = await this.prisma.brandPost.findMany({
+      where: { brandId: brand.id, isDeleted: false, status: 'PUBLISHED' },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: { id: true, title: true, caption: true, images: true, category: true, taggedProducts: true, variants: true },
+    });
+    return candidatesFromBrand({ ...brand, posts })
+      .candidates.slice(0, limit)
+      .map((c) => ({
+        id: `post:${c.sku}`,
+        title: c.title,
+        price: c.price,
+        images: c.images,
+        category: c.category,
+        occasions: [],
+        colors: c.colors,
+        sizes: c.sizes,
+        inStock: c.stock > 0,
+        isDrapeReady: c.isDrapeReady,
+        hasBuyLink: false,
+        featured: false,
+        newDrop: false,
+        description: c.description ?? undefined,
+        likesCount: 0,
+        sharesCount: c.sharesCount,
+      }));
+  }
 
   /** Only approved, live brands are visible to shoppers; anything else looks like it does not exist. */
   private async activeBrand(slug: string) {
@@ -32,7 +68,7 @@ export class BrandShowcaseService {
     return Promise.all(
       brands.map(async (brand) => ({
         brand: toPublicBrand(brand),
-        products: await this.catalogSvc.listPublic(brand.id, 12),
+        products: await this.productsFor(brand, 12),
         drops: await this.dropsSvc.listPublic(brand.id, userId),
       })),
     );
@@ -40,7 +76,7 @@ export class BrandShowcaseService {
 
   async catalog(slug: string) {
     const brand = await this.activeBrand(slug);
-    return { brand: toPublicBrand(brand), products: await this.catalogSvc.listPublic(brand.id) };
+    return { brand: toPublicBrand(brand), products: await this.productsFor(brand, 200) };
   }
 
   async drops(slug: string, userId?: string) {

@@ -13,6 +13,7 @@ import { BrandBiddingService } from '../../Brand-panel/bidding/brand-bidding.ser
 import { BrandAnalyticsService } from '../../Brand-panel/analytics/brand-analytics.service';
 import { AdjustCreditsDto, BrandPortalFilterDto, VerificationAction, VerificationDecisionDto } from './brand-portal.dto';
 import { ConflictException } from '@nestjs/common';
+import { CatalogPageQueryDto } from '../../Brand-panel/catalog/catalog-page.dto';
 
 const ACCOUNT_SELECT = {
   id: true,
@@ -102,9 +103,10 @@ export class BrandPortalService {
     return { brand, metrics, credits, catalogCount, dropsCount, bidsCount: bids.filter((s) => s.yourCurrentBid !== undefined).length };
   }
 
-  async catalogOf(id: string, admin: AuthenticatedAdmin) {
+  async catalogOf(id: string, admin: AuthenticatedAdmin, q: CatalogPageQueryDto = {}) {
     await this.getBrand(id, admin);
-    return this.catalog.findAll(id);
+    // Always paged: a brand can have hundreds of pieces and the admin screen only shows a screenful.
+    return this.catalog.findPage(id, { limit: 24, ...q });
   }
 
   async removeGarment(id: string, itemId: string, admin: AuthenticatedAdmin) {

@@ -4,6 +4,10 @@ import { BrandBiddingService, leaderOf } from './bidding/brand-bidding.service';
 import { BrandCatalogService } from './catalog/brand-catalog.service';
 import { BrandDropsService } from './drops/brand-drops.service';
 import { publicSocialLinks, toPublicBrand } from '../Admin-panel/brands/public-brand';
+import { candidatesFromBrand } from './catalog/post-catalog';
+
+/** The admin lists are not under test here: accept whatever category and occasions come in. */
+const passthrough: any = { requireCategory: async (v: string) => v, requireOccasions: async (v: string[]) => v, invalidatePublic: () => undefined };
 
 const at = (n: number) => new Date(2026, 0, 1, 0, 0, n);
 
@@ -34,10 +38,10 @@ describe('public brand data never leaks private account fields', () => {
 });
 
 describe('catalog is scoped to the brand and reports duplicate SKUs', () => {
-  const row = { id: 'p1', brandId: 'b1', title: 'T', sku: 'S', price: 10, originalPrice: null, images: [], category: 'c', occasions: [], colors: [], sizes: [], stock: 0, isDrapeReady: false, drapeScore: 0, fitScore: null, drapesCount: 0, clicksCount: 0, buyUrl: 'https://a', featured: false, newDrop: true };
+  const row = { id: 'p1', brandId: 'b1', title: 'T', sku: 'S', price: 10, originalPrice: null, images: [], category: 'c', occasions: [], colors: [], sizes: [], stock: 0, isDrapeReady: false, drapeScore: 0, fitScore: null, drapesCount: 0, clicksCount: 0, buyUrl: 'https://a', featured: false, newDrop: true, description: null, status: 'PUBLISHED', scheduledAt: null, publishedAt: null, sharesCount: 0, sourcePostId: null, _count: { likes: 0, comments: 0 } };
   it('reads only the signed-in brand rows', async () => {
     const prisma: any = { brandProduct: { findMany: jest.fn().mockResolvedValue([row]), findFirst: jest.fn().mockResolvedValue(null), deleteMany: jest.fn().mockResolvedValue({ count: 0 }) } };
-    const svc = new BrandCatalogService(prisma);
+    const svc = new BrandCatalogService(prisma, passthrough);
     await svc.findAll('b1');
     expect(prisma.brandProduct.findMany.mock.calls[0][0].where).toEqual({ brandId: 'b1' });
     await expect(svc.findOne('b1', 'someone-elses')).rejects.toThrow(NotFoundException);
@@ -48,11 +52,11 @@ describe('catalog is scoped to the brand and reports duplicate SKUs', () => {
   it('turns a unique-constraint error into a clear conflict', async () => {
     const err = new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' });
     const prisma: any = { brandProduct: { create: jest.fn().mockRejectedValue(err) } };
-    await expect(new BrandCatalogService(prisma).create('b1', { title: 'T', sku: 'S', price: 1, images: [], category: 'c', buyUrl: 'https://a' } as any)).rejects.toThrow(ConflictException);
+    await expect(new BrandCatalogService(prisma, passthrough).create('b1', { title: 'T', sku: 'S', price: 1, images: [], category: 'c', buyUrl: 'https://a' } as any)).rejects.toThrow(ConflictException);
   });
   it('public view hides internal fields and counts only approved brands for clicks', async () => {
     const prisma: any = { brandProduct: { findMany: jest.fn().mockResolvedValue([{ ...row, stock: 3 }]), findFirst: jest.fn().mockResolvedValue(null), update: jest.fn() } };
-    const svc = new BrandCatalogService(prisma);
+    const svc = new BrandCatalogService(prisma, passthrough);
     const [p] = await svc.listPublic('b1');
     expect(p).not.toHaveProperty('sku');
     expect(p).not.toHaveProperty('clicksCount');
@@ -158,5 +162,48 @@ describe('runway bidding', () => {
     await expect(svc.createCycle({ label: 'x', endsAt: '2020-01-01T00:00:00Z', slots }, 'a1')).rejects.toThrow(BadRequestException);
     await expect(svc.createCycle({ label: 'x', endsAt: new Date(Date.now() + 86_400_000).toISOString(), slots }, 'a1')).rejects.toThrow(/already open/);
     expect(prisma.bidCycle.findFirst).toHaveBeenCalled();
+  });
+});
+
+describe('catalog item = post (migration rules)', () => {
+  const post = (over: object = {}) => ({ id: 'cmpost12345678', title: null, caption: 'Grey hoodie under a light bomber. Easy weekend layer.', images: ['/a.jpg', '/b.jpg'], category: 'Casual', taggedProducts: null, variants: [], status: 'PUBLISHED' as const, sharesCount: 4, publishedAt: new Date('2026-10-01'), createdAt: new Date('2026-09-30'), ...over });
+  const brand = (posts: any[]) => ({ id: 'b1', name: 'Adidas', category: 'Sportswear', websiteUrl: 'https://www.adidas.co.in/', posts });
+
+  it('a plain post becomes one piece named from its caption, with the caption, status, shares and dates carried over', () => {
+    const { candidates } = candidatesFromBrand(brand([post()]));
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ title: 'Grey hoodie under a light bomber', description: 'Grey hoodie under a light bomber. Easy weekend layer.', status: 'PUBLISHED', sharesCount: 4, price: 0, firstOfPost: true, postId: 'cmpost12345678', buyUrl: 'https://www.adidas.co.in/' });
+    expect(candidates[0].images).toEqual(['/a.jpg', '/b.jpg']);
+    expect(candidates[0].publishedAt).toEqual(new Date('2026-10-01'));
+  });
+  it('drafts stay drafts (they are not made public by the migration)', () => {
+    expect(candidatesFromBrand(brand([post({ status: 'DRAFT', publishedAt: null })])).candidates[0].status).toBe('DRAFT');
+  });
+  it('a post with several tagged products: only the first piece inherits the post (likes and comments land once)', () => {
+    const tagged = [{ name: 'Jacket', price: '₹4,999', thumbnail: '/j.jpg' }, { name: 'Cap', price: '₹999', thumbnail: '/c.jpg' }];
+    const { candidates } = candidatesFromBrand(brand([post({ taggedProducts: tagged })]));
+    expect(candidates.map((c) => [c.title, c.price, c.firstOfPost])).toEqual([['Jacket', 4999, true], ['Cap', 999, false]]);
+  });
+  it('a post with no caption and no photo is skipped with a reason, never invented', () => {
+    const r = candidatesFromBrand(brand([post({ caption: '', images: [] }), post({ id: 'cmpost2', images: [] })]));
+    expect(r.candidates).toHaveLength(0);
+    expect(r.skipped.map((s) => s.why)).toEqual(['no caption to name it', 'no photo']);
+  });
+});
+
+describe('only published pieces reach shoppers', () => {
+  const draft = { id: 'p1', brandId: 'b1', title: 'T', sku: 'S', price: 1, originalPrice: null, images: ['/x.jpg'], category: 'c', occasions: [], colors: [], sizes: [], stock: 1, isDrapeReady: false, drapeScore: 0, fitScore: null, drapesCount: 0, clicksCount: 0, buyUrl: 'https://a', featured: false, newDrop: false, description: 'Cap', status: 'DRAFT', scheduledAt: null, publishedAt: null, sharesCount: 0, sourcePostId: null, _count: { likes: 2, comments: 0 } };
+  it('the public list asks for PUBLISHED only, and the Buy redirect refuses drafts', async () => {
+    const prisma: any = { brandProduct: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null), update: jest.fn() } };
+    const svc = new BrandCatalogService(prisma, passthrough);
+    await svc.listPublic('b1');
+    expect(prisma.brandProduct.findMany.mock.calls[0][0].where).toEqual({ brandId: 'b1', status: 'PUBLISHED' });
+    expect(await svc.recordPublicClick('p1')).toBeNull();
+    expect(prisma.brandProduct.findFirst.mock.calls[0][0].where.status).toBe('PUBLISHED');
+  });
+  it('the brand still sees its own drafts, with likes, shares and caption', async () => {
+    const prisma: any = { brandProduct: { findMany: jest.fn().mockResolvedValue([draft]) } };
+    const [p] = await new BrandCatalogService(prisma, passthrough).findAll('b1');
+    expect(p).toMatchObject({ status: 'DRAFT', description: 'Cap', likesCount: 2, commentsCount: 0, sharesCount: 0 });
   });
 });

@@ -18,6 +18,8 @@ import { BrandDropsController } from './drops/brand-drops.controller';
 import { BrandUploadController } from './upload/brand-upload.controller';
 import { BrandTeamController } from './team/brand-team.controller';
 import { BrandWidgetController } from './widget/brand-widget.controller';
+import { BrandTaxonomyController } from './taxonomy/brand-taxonomy.controller';
+import { TaxonomyService } from './taxonomy/taxonomy.service';
 
 // Services
 import { BrandAuthService } from './auth/brand-auth.service';
@@ -53,6 +55,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandUploadController,
     BrandTeamController,
     BrandWidgetController,
+    BrandTaxonomyController,
   ],
   providers: [
     AppLogger,
@@ -67,6 +70,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandDropsService,
     BrandUploadService,
     BrandWidgetService,
+    TaxonomyService,
   ],
   exports: [
     BrandAuthService,
@@ -79,6 +83,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandBiddingService,
     BrandDropsService,
     BrandUploadService,
+    TaxonomyService,
   ],
 })
 export class BrandPanelModule {}
