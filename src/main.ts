@@ -21,7 +21,7 @@ import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import * as path from "path";
 import { Readable } from "stream";
-import { SecurityObservabilityService } from "./modules/security-observability/security-observability.service";
+import { SecurityObservabilityService } from "./modules/Admin-panel/security-observability/security-observability.service";
 import { getClientIp } from "./common/utils/client-ip.util";
 
 async function bootstrap() {

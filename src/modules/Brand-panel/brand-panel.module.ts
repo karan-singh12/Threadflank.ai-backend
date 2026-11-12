@@ -4,7 +4,7 @@ import { MailerModule } from '../../shared/mailer/mailer.module';
 import { AppLogger } from '../../shared/logger/logger.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { StorageModule } from '../../shared/storage/storage.module';
-import { UploadsModule } from '../uploads/uploads.module';
+import { UploadsModule } from '../User-panel/uploads/uploads.module';
 
 // Controllers
 import { BrandAuthController } from './auth/brand-auth.controller';

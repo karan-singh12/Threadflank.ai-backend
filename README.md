@@ -57,23 +57,20 @@ backend/
 ├── src/
 │   ├── main.ts              # Fastify bootstrap, /api prefix, Swagger, CORS
 │   ├── app.module.ts        # Throttler, schedule, feature modules
-│   ├── auth/                # End-user auth (/user/auth)
-│   ├── chat/                # Conversations, groups, messages, calls, Socket.io gateways
 │   ├── common/              # Filters, interceptors, guards, decorators
 │   ├── jobs/                # Cron processors + BullMQ queue
-│   ├── modules/             # Feature modules (see below)
+│   ├── modules/             # Feature modules, grouped by panel (see below)
 │   ├── sdk/                 # GenAI: providers, router, agents, chains, RAG, cost logging
 │   └── shared/              # Audit log, logger, mailer, storage
 └── docker-compose.yml       # Local PostgreSQL on :5433
 ```
 
-**Feature modules** (`src/modules`):
-* **Users & auth:** `users`, `admin-auth`, `admin-users`
-* **Content & brands:** `posts`, `brands`, `brand-posts`, `brand-stories`, `cms`, `contact`, `email-templates`
-* **Wardrobe & twins:** `wardrobe`, `looks`, `twin`, `twin-circle`, `events`, `stylists`, `share`
-* **Studio & AI:** `studio-backgrounds`, `widget`, `ai-observability`
-* **Platform & admin:** `uploads`, `notifications`, `admin`, `admin-ops`
-* **Stubs:** `payments`, `rooms`
+**Feature modules** (`src/modules`), one folder per panel. Grouping does not change any route:
+* **`User-panel/`**: shopper app APIs and public/embed routes. `auth` (`/user/auth`), `chat` (conversations, calls, Socket.io), `users`, `posts`, `wardrobe`, `looks`, `twin`, `twin-circle`, `drape`, `events`, `stylists`, `share`, `notifications`, `uploads`, `payments` (`/billing`), `rooms`, plus the public read controllers for `brands`, `brand-posts`, `brand-stories`, `cms`, `contact`, `studio-backgrounds`, `widget` and the AI usage ingest (`/ai/usage`).
+* **`Admin-panel/`**: staff APIs under `/admin-panel/*` and `/admin/*`. `admin-auth`, `admin-users`, `admin`, `admin-ops`, `security-observability`, `email-templates`, `brands`, `brand-posts`, `brand-stories`, `cms`, `contact`, `studio-backgrounds`, `widget`, `ai-observability`, plus the admin controllers for `stylists`, `share` and `payments`.
+* **`Brand-panel/`**: brand portal APIs under `/brand/*`. `auth`, `profile`, `catalog`, `analytics`, `ai-studio`, `drops`, `bidding`, `upload`.
+
+A module's service and Nest module file live in the panel that owns the data. Its controllers sit in the panel whose users call them.
 
 ---
 

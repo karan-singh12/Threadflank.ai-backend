@@ -4,7 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtStrategy } from '../../auth/strategies/jwt.strategy';
+import { JwtStrategy } from '../../modules/User-panel/auth/strategies/jwt.strategy';
 import { MESSAGES } from '../constants/messages.constant';
 import { AuthenticatedUser } from '../interfaces/jwt-payload.interface';
 

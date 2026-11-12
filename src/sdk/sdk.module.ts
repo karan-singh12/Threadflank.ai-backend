@@ -14,7 +14,7 @@ import { RagQueryService } from './rag/rag-query.service';
 import { ConversationMemoryStore } from './memory/conversation-memory.store';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CacheModule } from '../cache/cache.module';
-import { AuthModule } from '../auth/auth.module';
+import { AuthModule } from '../modules/User-panel/auth/auth.module';
 import { AppLogger } from '../shared/logger/logger.service';
 
 const PROVIDERS = [

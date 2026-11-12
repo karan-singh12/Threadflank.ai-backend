@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { BrandPostsService } from '../../modules/brand-posts/brand-posts.service';
+import { BrandPostsService } from '../../modules/Admin-panel/brand-posts/brand-posts.service';
 import { AppLogger } from '../../shared/logger/logger.service';
 
 /** Flips due SCHEDULED brand posts to PUBLISHED. Mirrors LogCleanupProcessor's shape. */
