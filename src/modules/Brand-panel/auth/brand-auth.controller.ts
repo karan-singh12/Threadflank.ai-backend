@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } fro
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BrandAuthService } from './brand-auth.service';
-import { BrandEmailDto, BrandLoginDto, BrandRefreshTokenDto, BrandResetPasswordDto, BrandVerifyEmailDto, RegisterBrandDto } from '../dto/brand-common.dto';
+import { BrandEmailDto, BrandLoginDto, ChangePasswordDto, BrandRefreshTokenDto, BrandResetPasswordDto, BrandVerifyEmailDto, RegisterBrandDto } from '../dto/brand-common.dto';
 import { BrandAuthGuard, CurrentBrand } from './brand-auth.guard';
 import { AuthenticatedBrand } from './brand-jwt.strategy';
 
@@ -68,6 +68,16 @@ export class BrandAuthController {
   async resetPassword(@Body() dto: BrandResetPasswordDto) {
     await this.authService.resetPassword(dto.token, dto.newPassword);
     return { message: 'Password updated. You can now sign in.' };
+  }
+
+  @Post('change-password')
+  @ApiBearerAuth()
+  @UseGuards(BrandAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change the signed-in account password (signs out every device)' })
+  async changePassword(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: ChangePasswordDto) {
+    await this.authService.changePassword(brand.brandAccountId, dto.currentPassword, dto.newPassword);
+    return { message: 'Password changed. Please sign in again.' };
   }
 
   @Post('refresh')

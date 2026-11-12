@@ -9,3 +9,4 @@ export type { OccasionPlanResult } from './agents/occasion-planner.agent';
 export type { RagQueryResult } from './rag/rag-query.service';
 export type { RagDocument } from './rag/ingestion/loader';
 export type { RouteOverride, ProviderName, TaskType } from './core/router/router.types';
+export type { BrandContentInput, BrandContentType } from './prompts/brand-content.prompt';

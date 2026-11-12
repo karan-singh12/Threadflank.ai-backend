@@ -7,7 +7,7 @@ import { AdminRoles } from '../../../common/decorators/admin-roles.decorator';
 import { CurrentAdmin } from '../../../common/decorators/current-admin.decorator';
 import { AuthenticatedAdmin } from '../../../common/interfaces/admin-jwt-payload.interface';
 import { BrandPortalService } from './brand-portal.service';
-import { BrandPortalFilterDto, SetAccountActiveDto, VerificationDecisionDto } from './brand-portal.dto';
+import { AdjustCreditsDto, BrandPortalFilterDto, SetAccountActiveDto, VerificationDecisionDto } from './brand-portal.dto';
 
 @ApiTags('Admin Panel — Brand portal')
 @ApiBearerAuth()
@@ -66,6 +66,13 @@ export class BrandPortalController {
   @ApiOperation({ summary: 'Approve, reject or suspend a brand' })
   async decide(@Param('id') id: string, @Body() dto: VerificationDecisionDto, @CurrentAdmin() admin: AuthenticatedAdmin) {
     return { message: 'Decision recorded', data: await this.service.decide(id, dto, admin) };
+  }
+
+  @Patch('brands/:id/credits')
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiOperation({ summary: "Add, remove or set a brand's AI credits (reason required, audit-logged)" })
+  async credits(@Param('id') id: string, @Body() dto: AdjustCreditsDto, @CurrentAdmin() admin: AuthenticatedAdmin) {
+    return { message: 'Credits updated', data: await this.service.adjustCredits(id, dto, admin) };
   }
 
   @Patch('brands/:id/accounts/:accountId')

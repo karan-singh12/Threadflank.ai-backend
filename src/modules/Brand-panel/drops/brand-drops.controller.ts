@@ -14,25 +14,25 @@ export class BrandDropsController {
 
   @Get()
   @ApiOperation({ summary: "List the brand's drops" })
-  findAll(@CurrentBrand() brand: AuthenticatedBrand) {
-    return { message: 'Drops list fetched', data: this.dropsService.findAll(brand.brandId) };
+  async findAll(@CurrentBrand() brand: AuthenticatedBrand) {
+    return { message: 'Drops list fetched', data: await this.dropsService.findAll(brand.brandId) };
   }
 
   @Post()
   @ApiOperation({ summary: 'Schedule a new capsule drop' })
-  create(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: CreateDropDto) {
-    return { message: 'Drop created and waitlist activated', data: this.dropsService.create(brand.brandId, dto) };
+  async create(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: CreateDropDto) {
+    return { message: 'Drop created and waitlist activated', data: await this.dropsService.create(brand.brandId, dto) };
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Edit a drop' })
-  update(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string, @Body() dto: UpdateDropDto) {
-    return { message: 'Drop updated', data: this.dropsService.update(brand.brandId, id, dto) };
+  async update(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string, @Body() dto: UpdateDropDto) {
+    return { message: 'Drop updated', data: await this.dropsService.update(brand.brandId, id, dto) };
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a drop' })
-  remove(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string) {
-    return { message: 'Drop deleted', data: this.dropsService.remove(brand.brandId, id) };
+  async remove(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string) {
+    return { message: 'Drop deleted', data: await this.dropsService.remove(brand.brandId, id) };
   }
 }

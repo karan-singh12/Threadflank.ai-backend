@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BrandAiStudioService } from './brand-ai-studio.service';
-import { SimulateVideoDto } from '../dto/brand-common.dto';
+import { GenerateContentDto, SimulateVideoDto } from '../dto/brand-common.dto';
 import { BrandAuthGuard, CurrentBrand } from '../auth/brand-auth.guard';
 import { AuthenticatedBrand } from '../auth/brand-jwt.strategy';
 
@@ -23,5 +23,12 @@ export class BrandAiStudioController {
   @ApiOperation({ summary: 'Run a cinematic motion video simulation (charges credits)' })
   async simulate(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: SimulateVideoDto) {
     return { message: 'Simulation generated successfully', data: await this.aiStudioService.simulateVideo(brand.brandId, dto) };
+  }
+
+  @Post('content')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Write product descriptions, captions, announcements, emails or SEO copy (charges credits on success)' })
+  async content(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: GenerateContentDto) {
+    return { message: 'Content generated', data: await this.aiStudioService.generateContent(brand.brandId, dto) };
   }
 }

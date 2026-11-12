@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { BrandStatus } from '@prisma/client';
 
@@ -32,4 +32,24 @@ export class VerificationDecisionDto {
 export class SetAccountActiveDto {
   @IsBoolean()
   isActive!: boolean;
+}
+
+/** Send exactly one of delta (add or remove) or set (exact balance). A reason is always required. */
+export class AdjustCreditsDto {
+  @IsOptional()
+  @IsInt()
+  @Min(-100_000)
+  @Max(100_000)
+  delta?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000)
+  set?: number;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(300)
+  reason!: string;
 }

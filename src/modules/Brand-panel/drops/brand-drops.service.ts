@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateDropDto, UpdateDropDto } from '../dto/brand-common.dto';
 
 export interface LaunchDropEntity {
@@ -15,19 +17,31 @@ export interface LaunchDropEntity {
   countdownDays?: number;
 }
 
-/** Per-brand, in-memory drops (reset on restart) until a BrandDrop table exists. */
+type Row = Prisma.BrandDropGetPayload<{ include: { _count: { select: { waitlist: true } } } }>;
+const WITH_COUNT = { _count: { select: { waitlist: true } } } as const;
+
+/** A drop is "live" from its launch time and "completed" a week after. */
+const LIVE_WINDOW_MS = 7 * 86_400_000;
+
+const toEntity = (r: Row): LaunchDropEntity => {
+  const msLeft = r.launchDate.getTime() - Date.now();
+  return {
+    id: r.id,
+    title: r.title,
+    collectionName: r.collectionName,
+    description: r.description ?? undefined,
+    launchDate: r.launchDate.toISOString(),
+    waitlistCount: r._count.waitlist,
+    status: msLeft > 0 ? 'scheduled' : -msLeft > LIVE_WINDOW_MS ? 'completed' : 'live',
+    bannerUrl: r.bannerUrl,
+    productsCount: r.productsCount,
+    countdownDays: Math.max(0, Math.ceil(msLeft / 86_400_000)),
+  };
+};
+
 @Injectable()
 export class BrandDropsService {
-  private readonly byBrand = new Map<string, LaunchDropEntity[]>();
-
-  private withStatus(drop: LaunchDropEntity): LaunchDropEntity {
-    const msLeft = new Date(drop.launchDate).getTime() - Date.now();
-    return { ...drop, status: msLeft <= 0 ? 'live' : 'scheduled', countdownDays: Math.max(0, Math.ceil(msLeft / 86_400_000)) };
-  }
-
-  findAll(brandId: string): LaunchDropEntity[] {
-    return (this.byBrand.get(brandId) ?? []).map((d) => this.withStatus(d));
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Today is fine (the date picker sends midnight); earlier days are not. */
   private assertNotPast(launchDate: string) {
@@ -36,35 +50,87 @@ export class BrandDropsService {
     }
   }
 
-  create(brandId: string, dto: CreateDropDto): LaunchDropEntity {
+  async findAll(brandId: string): Promise<LaunchDropEntity[]> {
+    const rows = await this.prisma.brandDrop.findMany({ where: { brandId }, orderBy: { launchDate: 'desc' }, include: WITH_COUNT });
+    return rows.map(toEntity);
+  }
+
+  count(brandId: string) {
+    return this.prisma.brandDrop.count({ where: { brandId } });
+  }
+
+  async create(brandId: string, dto: CreateDropDto): Promise<LaunchDropEntity> {
     this.assertNotPast(dto.launchDate);
-    const drop: LaunchDropEntity = {
-      id: `drop_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-      title: dto.title,
-      collectionName: dto.collectionName,
-      description: dto.description,
-      launchDate: dto.launchDate,
-      waitlistCount: 0,
-      status: 'scheduled',
-      bannerUrl: dto.bannerUrl,
-      productsCount: dto.productsCount || 1,
-    };
-    this.byBrand.set(brandId, [drop, ...(this.byBrand.get(brandId) ?? [])]);
-    return this.withStatus(drop);
+    const row = await this.prisma.brandDrop.create({
+      data: {
+        brandId,
+        title: dto.title,
+        collectionName: dto.collectionName,
+        description: dto.description,
+        launchDate: new Date(dto.launchDate),
+        bannerUrl: dto.bannerUrl ?? '',
+        productsCount: dto.productsCount || 1,
+      },
+      include: WITH_COUNT,
+    });
+    return toEntity(row);
   }
 
-  update(brandId: string, id: string, dto: UpdateDropDto): LaunchDropEntity {
-    const drop = (this.byBrand.get(brandId) ?? []).find((d) => d.id === id);
-    if (!drop) throw new NotFoundException('Drop not found.');
+  async update(brandId: string, id: string, dto: UpdateDropDto): Promise<LaunchDropEntity> {
+    const existing = await this.prisma.brandDrop.findFirst({ where: { id, brandId } });
+    if (!existing) throw new NotFoundException('Drop not found.');
     if (dto.launchDate !== undefined) this.assertNotPast(dto.launchDate);
-    for (const [k, v] of Object.entries(dto)) if (v !== undefined) (drop as any)[k] = v;
-    return this.withStatus(drop);
+    const { launchDate, ...rest } = dto;
+    const row = await this.prisma.brandDrop.update({
+      where: { id },
+      data: { ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)), ...(launchDate ? { launchDate: new Date(launchDate) } : {}) },
+      include: WITH_COUNT,
+    });
+    return toEntity(row);
   }
 
-  remove(brandId: string, id: string) {
-    const list = this.byBrand.get(brandId) ?? [];
-    if (!list.some((d) => d.id === id)) throw new NotFoundException('Drop not found.');
-    this.byBrand.set(brandId, list.filter((d) => d.id !== id));
+  async remove(brandId: string, id: string) {
+    const { count } = await this.prisma.brandDrop.deleteMany({ where: { id, brandId } });
+    if (count === 0) throw new NotFoundException('Drop not found.');
     return { success: true, id };
+  }
+
+  // ── Shopper-facing ──────────────────────────────────────────────────────
+
+  /** Upcoming and live drops only; finished ones drop off the brand page. */
+  async listPublic(brandId: string, userId?: string) {
+    const rows = await this.prisma.brandDrop.findMany({
+      where: { brandId, launchDate: { gt: new Date(Date.now() - LIVE_WINDOW_MS) } },
+      orderBy: { launchDate: 'asc' },
+      include: WITH_COUNT,
+      take: 20,
+    });
+    const joined = userId
+      ? new Set((await this.prisma.dropWaitlistEntry.findMany({ where: { userId, dropId: { in: rows.map((r) => r.id) } }, select: { dropId: true } })).map((w) => w.dropId))
+      : new Set<string>();
+    return rows.map((r) => {
+      const { skuCount: _s, ...drop } = toEntity(r);
+      return { ...drop, joined: joined.has(r.id) };
+    });
+  }
+
+  private async publicDrop(dropId: string) {
+    const drop = await this.prisma.brandDrop.findFirst({ where: { id: dropId, brand: { isDeleted: false, status: 'ACTIVE' } } });
+    if (!drop) throw new NotFoundException('Drop not found.');
+    return drop;
+  }
+
+  /** Idempotent: joining twice leaves one entry. Past drops can't be joined. */
+  async joinWaitlist(dropId: string, userId: string) {
+    const drop = await this.publicDrop(dropId);
+    if (drop.launchDate.getTime() <= Date.now()) throw new BadRequestException('This drop has already launched.');
+    await this.prisma.dropWaitlistEntry.upsert({ where: { dropId_userId: { dropId, userId } }, create: { dropId, userId }, update: {} });
+    return { joined: true, waitlistCount: await this.prisma.dropWaitlistEntry.count({ where: { dropId } }) };
+  }
+
+  async leaveWaitlist(dropId: string, userId: string) {
+    await this.publicDrop(dropId);
+    await this.prisma.dropWaitlistEntry.deleteMany({ where: { dropId, userId } });
+    return { joined: false, waitlistCount: await this.prisma.dropWaitlistEntry.count({ where: { dropId } }) };
   }
 }

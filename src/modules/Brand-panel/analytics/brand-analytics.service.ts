@@ -36,7 +36,7 @@ export class BrandAnalyticsService {
       this.prisma.brandWidgetSession.count({ where: { brandId } }),
       this.prisma.brandWidgetSession.count({ where: { brandId, success: true } }),
     ]);
-    const { clicks } = this.catalogService.totals(brandId);
+    const { clicks } = await this.catalogService.totals(brandId);
     const conversion = successful > 0 ? Number(((clicks / successful) * 100).toFixed(1)) : 0;
 
     return {
@@ -50,7 +50,7 @@ export class BrandAnalyticsService {
   }
 
   async trackOutboundClick(brandId: string, dto: TrackClickDto) {
-    const counted = this.catalogService.incrementClick(brandId, dto.productId);
+    const counted = await this.catalogService.incrementClick(brandId, dto.productId);
     return { success: counted, productId: dto.productId };
   }
 }

@@ -13,16 +13,22 @@ export class BrandBiddingController {
   constructor(private readonly biddingService: BrandBiddingService) {}
 
   @Get('slots')
-  @ApiOperation({ summary: 'Open Runway Spotlight slots with this brand\'s standing' })
-  findAll(@CurrentBrand() brand: AuthenticatedBrand) {
-    return { message: 'Runway placement slots fetched', data: this.biddingService.findAll(brand.brandId) };
+  @ApiOperation({ summary: "Slots of the open auction with this brand's standing (empty when none is open)" })
+  async findAll(@CurrentBrand() brand: AuthenticatedBrand) {
+    return { message: 'Runway placement slots fetched', data: await this.biddingService.findAll(brand.brandId) };
   }
 
   @Post('slots/:rank/bid')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Place a bid on a Runway slot' })
-  placeBid(@CurrentBrand() brand: AuthenticatedBrand, @Param('rank', ParseIntPipe) rank: number, @Body() dto: PlaceBidDto) {
-    const result = this.biddingService.placeBid(brand.brandId, rank, dto);
+  @ApiOperation({ summary: 'Place a bid on a Runway slot (approved brands only)' })
+  async placeBid(@CurrentBrand() brand: AuthenticatedBrand, @Param('rank', ParseIntPipe) rank: number, @Body() dto: PlaceBidDto) {
+    const result = await this.biddingService.placeBid(brand.brandId, rank, dto);
     return { message: result.message, data: result.slot };
+  }
+
+  @Get('wins')
+  @ApiOperation({ summary: 'Slots this brand has won' })
+  async wins(@CurrentBrand() brand: AuthenticatedBrand) {
+    return { message: 'Wins fetched', data: await this.biddingService.wins(brand.brandId) };
   }
 }

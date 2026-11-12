@@ -8,10 +8,11 @@ import { BrandsModule } from '../brands/brands.module';
 import { BrandPanelModule } from '../../Brand-panel/brand-panel.module';
 import { BrandPortalController } from './brand-portal.controller';
 import { BrandPortalService } from './brand-portal.service';
+import { BrandBiddingAdminController } from './brand-bidding-admin.controller';
 
 @Module({
   imports: [PrismaModule, AdminAuthModule, AuditLogModule, MailerModule, BrandsModule, BrandPanelModule],
-  controllers: [BrandPortalController],
+  controllers: [BrandPortalController, BrandBiddingAdminController],
   providers: [AppLogger, BrandPortalService],
 })
 export class BrandPortalModule {}
