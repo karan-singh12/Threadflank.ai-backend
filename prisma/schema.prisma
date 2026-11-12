@@ -7,75 +7,76 @@ datasource db {
 }
 
 model User {
-  id                  String             @id @default(cuid())
-  email               String             @unique
-  username            String?            @unique
+  id                  String              @id @default(cuid())
+  dropWaitlist        DropWaitlistEntry[]
+  email               String              @unique
+  username            String?             @unique
   password            String
-  role                Role               @default(USER)
-  accountType         AccountType        @default(NORMAL)
+  role                Role                @default(USER)
+  accountType         AccountType         @default(NORMAL)
   bio                 String?
   phone               String?
   location            String?
   avatar              String?
-  sentFriendships     Friendship[]       @relation("SentFriendships")
-  receivedFriendships Friendship[]       @relation("ReceivedFriendships")
-  conversationsAsA    Conversation[]     @relation("ConvUserA")
-  conversationsAsB    Conversation[]     @relation("ConvUserB")
-  sentMessages        Message[]          @relation("MessageSender")
+  sentFriendships     Friendship[]        @relation("SentFriendships")
+  receivedFriendships Friendship[]        @relation("ReceivedFriendships")
+  conversationsAsA    Conversation[]      @relation("ConvUserA")
+  conversationsAsB    Conversation[]      @relation("ConvUserB")
+  sentMessages        Message[]           @relation("MessageSender")
   createdGroups       GroupConversation[] @relation("GroupCreator")
   groupMemberships    GroupMember[]
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
 
   // Presence tracking
-  isOnline            Boolean            @default(false)
-  lastSeen            DateTime           @default(now())
-  socketId            String?
+  isOnline Boolean  @default(false)
+  lastSeen DateTime @default(now())
+  socketId String?
 
   // Relations for new models
-  reactions           MessageReaction[]
-  messageReads        MessageRead[]
-  messageDeliveries   MessageDelivery[]
-  posts               Post[]
-  postLikes           PostLike[]
-  postComments        PostComment[]
-  sentCallLogs        CallLog[]          @relation("CallLogsAsCaller")
-  receivedCallLogs    CallLog[]          @relation("CallLogsAsReceiver")
-  wardrobeItems       WardrobeItem[]
-  looks               Look[]
-  twinProfile         TwinProfile?
+  reactions         MessageReaction[]
+  messageReads      MessageRead[]
+  messageDeliveries MessageDelivery[]
+  posts             Post[]
+  postLikes         PostLike[]
+  postComments      PostComment[]
+  sentCallLogs      CallLog[]         @relation("CallLogsAsCaller")
+  receivedCallLogs  CallLog[]         @relation("CallLogsAsReceiver")
+  wardrobeItems     WardrobeItem[]
+  looks             Look[]
+  twinProfile       TwinProfile?
 
   // Image credits: each generated image spends credits; new accounts get the free amount once.
   // Existing accounts default to verified; signup creates new ones as false until the email link is used.
-  emailVerified        Boolean            @default(true)
-  creditBalance        Int                @default(0)
+  emailVerified        Boolean   @default(true)
+  creditBalance        Int       @default(0)
   freeCreditsGrantedAt DateTime?
 }
 
 // ─── 1:1 Conversations ────────────────────────────────────────────────────────
 
 model Conversation {
-  id             String    @id @default(cuid())
-  userAId        String
-  userBId        String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  lastMessageAt  DateTime?
-  lastMessageId  String?
+  id            String    @id @default(cuid())
+  userAId       String
+  userBId       String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastMessageAt DateTime?
+  lastMessageId String?
 
-  userA          User      @relation("ConvUserA", fields: [userAId], references: [id], onDelete: Cascade)
-  userB          User      @relation("ConvUserB", fields: [userBId], references: [id], onDelete: Cascade)
-  messages       Message[]
+  userA    User      @relation("ConvUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB    User      @relation("ConvUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages Message[]
 
   // Settings
-  isArchivedA    Boolean   @default(false)
-  isArchivedB    Boolean   @default(false)
-  isMutedA       Boolean   @default(false)
-  isMutedB       Boolean   @default(false)
-  isPinnedA      Boolean   @default(false)
-  isPinnedB      Boolean   @default(false)
-  isDeletedA     Boolean   @default(false)
-  isDeletedB     Boolean   @default(false)
+  isArchivedA Boolean @default(false)
+  isArchivedB Boolean @default(false)
+  isMutedA    Boolean @default(false)
+  isMutedB    Boolean @default(false)
+  isPinnedA   Boolean @default(false)
+  isPinnedB   Boolean @default(false)
+  isDeletedA  Boolean @default(false)
+  isDeletedB  Boolean @default(false)
 
   @@unique([userAId, userBId])
   @@index([lastMessageAt])
@@ -84,20 +85,20 @@ model Conversation {
 // ─── Group Conversations ──────────────────────────────────────────────────────
 
 model GroupConversation {
-  id             String        @id @default(cuid())
-  name           String
-  avatar         String?
-  createdBy      String
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  lastMessageAt  DateTime?
-  description    String?
-  isArchived     Boolean       @default(false)
-  isDeleted      Boolean       @default(false)
+  id            String    @id @default(cuid())
+  name          String
+  avatar        String?
+  createdBy     String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastMessageAt DateTime?
+  description   String?
+  isArchived    Boolean   @default(false)
+  isDeleted     Boolean   @default(false)
 
-  creator        User          @relation("GroupCreator", fields: [createdBy], references: [id])
-  members        GroupMember[]
-  messages       Message[]
+  creator  User          @relation("GroupCreator", fields: [createdBy], references: [id])
+  members  GroupMember[]
+  messages Message[]
 
   @@index([lastMessageAt])
 }
@@ -108,15 +109,15 @@ enum GroupRole {
 }
 
 model GroupMember {
-  id         String            @id @default(cuid())
+  id         String    @id @default(cuid())
   groupId    String
   userId     String
-  joinedAt   DateTime          @default(now())
-  role       GroupRole         @default(MEMBER)
+  joinedAt   DateTime  @default(now())
+  role       GroupRole @default(MEMBER)
   mutedUntil DateTime?
 
-  group      GroupConversation @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group GroupConversation @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
 }
@@ -124,14 +125,14 @@ model GroupMember {
 // ─── Unified Message (1:1 or Group) ──────────────────────────────────────────
 
 model Message {
-  id             String             @id @default(cuid())
+  id             String   @id @default(cuid())
   senderId       String
   content        String
-  sentAt         DateTime           @default(now())
+  sentAt         DateTime @default(now())
   conversationId String?
   groupId        String?
 
-  edited           Boolean            @default(false)
+  edited           Boolean   @default(false)
   editedAt         DateTime?
   deletedAt        DateTime?
   replyToMessageId String?
@@ -139,13 +140,13 @@ model Message {
   attachmentType   String?
   metadata         Json?
 
-  sender         User               @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
-  conversation   Conversation?      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  group          GroupConversation? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender       User               @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  conversation Conversation?      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  group        GroupConversation? @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  reactions      MessageReaction[]
-  reads          MessageRead[]
-  deliveries     MessageDelivery[]
+  reactions  MessageReaction[]
+  reads      MessageRead[]
+  deliveries MessageDelivery[]
 
   @@index([conversationId, sentAt])
   @@index([groupId, sentAt])
@@ -159,8 +160,8 @@ model MessageReaction {
   emoji     String
   createdAt DateTime @default(now())
 
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId, emoji])
 }
@@ -171,8 +172,8 @@ model MessageRead {
   userId    String
   readAt    DateTime @default(now())
 
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId])
   @@index([readAt])
@@ -184,8 +185,8 @@ model MessageDelivery {
   userId      String
   deliveredAt DateTime @default(now())
 
-  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId])
 }
@@ -262,8 +263,8 @@ model Friendship {
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 
-  sender     User             @relation("SentFriendships", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver   User             @relation("ReceivedFriendships", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender   User @relation("SentFriendships", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedFriendships", fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@unique([senderId, receiverId])
 }
@@ -308,16 +309,16 @@ model PostComment {
 }
 
 model CallLog {
-  id          String   @id @default(cuid())
-  callerId    String
-  receiverId  String
-  status      String   // "completed", "missed", "rejected"
-  video       Boolean  @default(false)
-  duration    Int      @default(0) // duration in seconds
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  callerId   String
+  receiverId String
+  status     String // "completed", "missed", "rejected"
+  video      Boolean  @default(false)
+  duration   Int      @default(0) // duration in seconds
+  createdAt  DateTime @default(now())
 
-  caller      User     @relation("CallLogsAsCaller", fields: [callerId], references: [id], onDelete: Cascade)
-  receiver    User     @relation("CallLogsAsReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  caller   User @relation("CallLogsAsCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver User @relation("CallLogsAsReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@index([callerId])
   @@index([receiverId])
@@ -325,19 +326,19 @@ model CallLog {
 }
 
 model WardrobeItem {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
   name       String
   brand      String?
   category   String
   image      String
   color      String?
-  tags       Json?    // Stored as an array of strings e.g. ["Casual", "Work"]
+  tags       Json? // Stored as an array of strings e.g. ["Casual", "Work"]
   wornCount  Int       @default(0)
   lastWornAt DateTime?
-  costPaid   Int?      // Whole rupees, user-entered
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  costPaid   Int? // Whole rupees, user-entered
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   wearLogs       WardrobeItemWearLog[]
@@ -356,27 +357,27 @@ model WardrobeItemWearLog {
   lookId         String?
   eventId        String?
 
-  wardrobeItem   WardrobeItem @relation(fields: [wardrobeItemId], references: [id], onDelete: Cascade)
+  wardrobeItem WardrobeItem @relation(fields: [wardrobeItemId], references: [id], onDelete: Cascade)
 
   @@index([wardrobeItemId, wornAt])
   @@index([userId, wornAt])
 }
 
 model Look {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  occasion  String   // "casual", "formal", "party", "work", "date"
-  image     String   // The try-on image or piece photo
-  gradient  String?  // Styling gradient background
-  pieces    Json     // Array of category names / piece tags
-  liked     Boolean  @default(false)
-  poseVariants           Json?     // [{ pose: "side", imageUrl }]
-  videoUrl               String?   // Liveness clip (MP4)
+  id                     String    @id @default(cuid())
+  userId                 String
+  name                   String
+  occasion               String // "casual", "formal", "party", "work", "date"
+  image                  String // The try-on image or piece photo
+  gradient               String? // Styling gradient background
+  pieces                 Json // Array of category names / piece tags
+  liked                  Boolean   @default(false)
+  poseVariants           Json? // [{ pose: "side", imageUrl }]
+  videoUrl               String? // Liveness clip (MP4)
   stylistReviewRequested Boolean   @default(false)
   reviewRequestedAt      DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   stylistComments LookStylistComment[]
@@ -475,31 +476,34 @@ enum BrandStatus {
 }
 
 model Brand {
-  id                String      @id @default(cuid())
-  name              String
-  slug              String      @unique
-  logoUrl           String?
-  description       String?
-  websiteUrl        String?
-  category          String?
-  isVerified        Boolean     @default(false)
-  status            BrandStatus @default(ACTIVE)
-  socialLinks       Json?
-  isDeleted         Boolean     @default(false)
-  createdByAdminId  String?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id               String      @id @default(cuid())
+  name             String
+  slug             String      @unique
+  logoUrl          String?
+  description      String?
+  websiteUrl       String?
+  category         String?
+  isVerified       Boolean     @default(false)
+  status           BrandStatus @default(ACTIVE)
+  socialLinks      Json?
+  isDeleted        Boolean     @default(false)
+  createdByAdminId String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   // Embeddable D2C try-on widget
-  widgetKey      String?  @unique
-  widgetEnabled  Boolean  @default(false)
-  widgetDomains  Json?    // Allowed storefront origins, e.g. ["https://shop.example.com"]
+  widgetKey     String? @unique
+  widgetEnabled Boolean @default(false)
+  widgetDomains Json? // Allowed storefront origins, e.g. ["https://shop.example.com"]
 
   managers       BrandManagerAssignment[]
   accounts       BrandAccount[]
   posts          BrandPost[]
   stories        BrandStory[]
   widgetSessions BrandWidgetSession[]
+  products       BrandProduct[]
+  drops          BrandDrop[]
+  bids           Bid[]
 
   @@index([status])
   @@index([isDeleted])
@@ -526,17 +530,17 @@ enum BrandAccountRole {
 }
 
 model BrandAccount {
-  id          String           @id @default(cuid())
-  brandId     String
-  email       String           @unique
-  password    String
-  name        String
-  role        BrandAccountRole @default(OWNER)
-  isActive    Boolean          @default(true)
-  emailVerified Boolean        @default(false)
-  lastLoginAt DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id            String           @id @default(cuid())
+  brandId       String
+  email         String           @unique
+  password      String
+  name          String
+  role          BrandAccountRole @default(OWNER)
+  isActive      Boolean          @default(true)
+  emailVerified Boolean          @default(false)
+  lastLoginAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   brand         Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
   refreshTokens BrandRefreshToken[]
@@ -570,13 +574,13 @@ enum BrandAuthTokenPurpose {
 
 /// One-time emailed links (verify email, reset password). Only the hash of the token is stored.
 model BrandAuthToken {
-  id             String                 @id @default(cuid())
+  id             String                @id @default(cuid())
   brandAccountId String
   purpose        BrandAuthTokenPurpose
   tokenHash      String
   expiresAt      DateTime
   usedAt         DateTime?
-  createdAt      DateTime               @default(now())
+  createdAt      DateTime              @default(now())
 
   brandAccount BrandAccount @relation(fields: [brandAccountId], references: [id], onDelete: Cascade)
 
@@ -592,23 +596,23 @@ enum ContentStatus {
 }
 
 model BrandPost {
-  id                String        @id @default(cuid())
-  brandId           String
-  title             String?
-  caption           String
-  images            Json
-  category          String?
-  taggedProducts    Json?
-  status            ContentStatus @default(DRAFT)
-  scheduledAt       DateTime?
-  publishedAt       DateTime?
-  failureReason     String?
-  isDeleted         Boolean       @default(false)
+  id               String        @id @default(cuid())
+  brandId          String
+  title            String?
+  caption          String
+  images           Json
+  category         String?
+  taggedProducts   Json?
+  status           ContentStatus @default(DRAFT)
+  scheduledAt      DateTime?
+  publishedAt      DateTime?
+  failureReason    String?
+  isDeleted        Boolean       @default(false)
   /// Times someone shared the post from the app (card, WhatsApp or link).
-  sharesCount       Int           @default(0)
-  createdByAdminId  String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  sharesCount      Int           @default(0)
+  createdByAdminId String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   brand    Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
   likes    BrandPostLike[]
@@ -645,16 +649,16 @@ model BrandPostComment {
 // ─── Brand Stories (24h TTL carousel) ─────────────────────────────────────────
 
 model BrandStory {
-  id                String   @id @default(cuid())
-  brandId           String
-  mediaUrl          String
-  mediaType         String   // "IMAGE" | "VIDEO"
-  caption           String?
-  expiresAt         DateTime
-  viewsCount        Int      @default(0)
-  isDeleted         Boolean  @default(false)
-  createdByAdminId  String?
-  createdAt         DateTime @default(now())
+  id               String   @id @default(cuid())
+  brandId          String
+  mediaUrl         String
+  mediaType        String // "IMAGE" | "VIDEO"
+  caption          String?
+  expiresAt        DateTime
+  viewsCount       Int      @default(0)
+  isDeleted        Boolean  @default(false)
+  createdByAdminId String?
+  createdAt        DateTime @default(now())
 
   brand Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
   views BrandStoryView[]
@@ -676,16 +680,16 @@ model BrandStoryView {
 // ─── Email Templates ──────────────────────────────────────────────────────────
 
 model EmailTemplate {
-  id                String   @id @default(cuid())
-  key               String   @unique
-  name              String
-  subject           String
-  htmlBody          String
-  variables         Json?
-  isActive          Boolean  @default(true)
-  createdByAdminId  String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String   @id @default(cuid())
+  key              String   @unique
+  name             String
+  subject          String
+  htmlBody         String
+  variables        Json?
+  isActive         Boolean  @default(true)
+  createdByAdminId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 // ─── CMS Content Blocks ───────────────────────────────────────────────────────
@@ -704,17 +708,17 @@ enum ContentBlockStatus {
 }
 
 model ContentBlock {
-  id                String             @id @default(cuid())
-  key               String             @unique
-  type              ContentBlockType
-  title             String?
-  body              Json
-  status            ContentBlockStatus @default(DRAFT)
-  publishedAt       DateTime?
-  isDeleted         Boolean            @default(false)
-  createdByAdminId  String?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id               String             @id @default(cuid())
+  key              String             @unique
+  type             ContentBlockType
+  title            String?
+  body             Json
+  status           ContentBlockStatus @default(DRAFT)
+  publishedAt      DateTime?
+  isDeleted        Boolean            @default(false)
+  createdByAdminId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([type, status])
 }
@@ -739,12 +743,12 @@ model UserPasswordReset {
 // auth.service.ts, which is out of scope) ─────────────────────────────────────
 
 model UserSuspension {
-  id                  String    @id @default(cuid())
-  userId              String
-  reason              String?
-  suspendedByAdminId  String?
-  suspendedAt         DateTime  @default(now())
-  liftedAt            DateTime?
+  id                 String    @id @default(cuid())
+  userId             String
+  reason             String?
+  suspendedByAdminId String?
+  suspendedAt        DateTime  @default(now())
+  liftedAt           DateTime?
 
   @@index([userId, liftedAt])
 }
@@ -764,31 +768,31 @@ model TwinProfile {
   hairColor     String?
   selfieUrl     String?
   baseAvatarUrl String?
-  backgroundId  String?  // Preferred StudioBackground (scene) id
+  backgroundId  String? // Preferred StudioBackground (scene) id
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AiRequestLog {
-  id                String   @id @default(cuid())
-  provider          String
-  model             String
-  taskType          String?
-  promptTokens      Int?
-  completionTokens  Int?
-  totalTokens       Int?
-  latencyMs         Int?
-  success           Boolean
-  errorMessage      String?
-  requestedBy       String?  // User.id of the end user, when known
-  costUsd           Float?   // Estimated spend for this call
-  outputUrl         String?  // Generated image/video, for image/video models
-  metadata          Json?    // Engine, garment kind, brand widget id, …
-  createdAt         DateTime @default(now())
+  id               String   @id @default(cuid())
+  provider         String
+  model            String
+  taskType         String?
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  latencyMs        Int?
+  success          Boolean
+  errorMessage     String?
+  requestedBy      String? // User.id of the end user, when known
+  costUsd          Float? // Estimated spend for this call
+  outputUrl        String? // Generated image/video, for image/video models
+  metadata         Json? // Engine, garment kind, brand widget id, …
+  createdAt        DateTime @default(now())
 
-  evals             TryOnEval[]
+  evals TryOnEval[]
 
   @@index([provider, model])
   @@index([createdAt])
@@ -801,17 +805,17 @@ model TryOnEval {
   id              String   @id @default(cuid())
   aiRequestLogId  String?
   imageUrl        String
-  engine          String   // "idm-vton" | "kontext-multi" | …
-  garmentKind     String   // "saree", "lehenga", "kurta", "western", …
-  drapeScore      Int      // 1-5: fall, pleats, volume
-  fidelityScore   Int      // 1-5: garment colour/print/embroidery kept
-  identityScore   Int      // 1-5: face/body/skin tone preserved
-  overallScore    Int      // 1-5
+  engine          String // "idm-vton" | "kontext-multi" | …
+  garmentKind     String // "saree", "lehenga", "kurta", "western", …
+  drapeScore      Int // 1-5: fall, pleats, volume
+  fidelityScore   Int // 1-5: garment colour/print/embroidery kept
+  identityScore   Int // 1-5: face/body/skin tone preserved
+  overallScore    Int // 1-5
   notes           String?
   reviewerAdminId String?
   createdAt       DateTime @default(now())
 
-  aiRequestLog    AiRequestLog? @relation(fields: [aiRequestLogId], references: [id], onDelete: SetNull)
+  aiRequestLog AiRequestLog? @relation(fields: [aiRequestLogId], references: [id], onDelete: SetNull)
 
   @@index([engine, garmentKind])
   @@index([createdAt])
@@ -860,13 +864,12 @@ model StudioBackground {
   @@index([isActive, order])
 }
 
-
 // ─── In-app notifications (persisted, also pushed over the socket) ───────────
 
 model Notification {
   id        String    @id @default(cuid())
   userId    String
-  type      String    // BORROW_REQUEST, CIRCLE_INVITE, EVENT_INVITE, STYLIST_COMMENT, …
+  type      String // BORROW_REQUEST, CIRCLE_INVITE, EVENT_INVITE, STYLIST_COMMENT, …
   title     String
   body      String?
   link      String?
@@ -882,7 +885,7 @@ model Notification {
 
 enum CircleMemberKind {
   PROFILE // Managed by the owner: body details + twin, no account of their own
-  USER    // A friend's own account (and their own twin)
+  USER // A friend's own account (and their own twin)
 }
 
 enum CircleMemberStatus {
@@ -898,8 +901,8 @@ model TwinCircle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members   TwinCircleMember[]
-  events    Event[]
+  members TwinCircleMember[]
+  events  Event[]
 }
 
 model TwinCircleMember {
@@ -907,7 +910,7 @@ model TwinCircleMember {
   circleId  String
   kind      CircleMemberKind   @default(PROFILE)
   status    CircleMemberStatus @default(ACTIVE)
-  userId    String?            // Set for USER members
+  userId    String? // Set for USER members
   name      String
   relation  String?
   gender    String?
@@ -920,7 +923,7 @@ model TwinCircleMember {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
-  circle    TwinCircle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  circle TwinCircle @relation(fields: [circleId], references: [id], onDelete: Cascade)
 
   @@unique([circleId, userId])
   @@index([userId, status])
@@ -937,12 +940,12 @@ enum BorrowStatus {
 model BorrowRequest {
   id             String       @id @default(cuid())
   circleId       String
-  ownerId        String       // Owner of the item
+  ownerId        String // Owner of the item
   requesterId    String
   wardrobeItemId String
   eventId        String?
   kind           String       @default("BORROW") // BORROW | SWAP
-  swapItemId     String?      // Requester's own item offered in a swap
+  swapItemId     String? // Requester's own item offered in a swap
   status         BorrowStatus @default(PENDING)
   message        String?
   neededBy       DateTime?
@@ -950,7 +953,7 @@ model BorrowRequest {
   respondedAt    DateTime?
   returnedAt     DateTime?
 
-  wardrobeItem   WardrobeItem @relation(fields: [wardrobeItemId], references: [id], onDelete: Cascade)
+  wardrobeItem WardrobeItem @relation(fields: [wardrobeItemId], references: [id], onDelete: Cascade)
 
   @@index([ownerId, status])
   @@index([requesterId, status])
@@ -969,13 +972,13 @@ model Event {
   eventDate   DateTime?
   budget      Int?
   notes       String?
-  groupId     String?   // GroupConversation used as the GRWM chat
+  groupId     String? // GroupConversation used as the GRWM chat
   grwmLiveAt  DateTime? // Set while a Get Ready With Me session is running
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  circle      TwinCircle        @relation(fields: [circleId], references: [id], onDelete: Cascade)
-  plans       EventOutfitPlan[]
+  circle TwinCircle        @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  plans  EventOutfitPlan[]
 
   @@index([circleId, eventDate])
 }
@@ -988,17 +991,17 @@ enum PlanStatus {
 model EventOutfitPlan {
   id          String     @id @default(cuid())
   eventId     String
-  userId      String?    // Account holder this plan is for
-  memberId    String?    // Or a PROFILE circle member
+  userId      String? // Account holder this plan is for
+  memberId    String? // Or a PROFILE circle member
   lookId      String?
-  color       String?    // Main colour, used for clash warnings
+  color       String? // Main colour, used for clash warnings
   note        String?
   status      PlanStatus @default(PLANNING)
   updatedById String?
   updatedAt   DateTime   @updatedAt
 
-  event       Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  look        Look? @relation(fields: [lookId], references: [id], onDelete: SetNull)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  look  Look? @relation(fields: [lookId], references: [id], onDelete: SetNull)
 
   @@unique([eventId, userId])
   @@unique([eventId, memberId])
@@ -1019,10 +1022,10 @@ model StylistProfile {
   displayName     String
   bio             String?
   city            String?
-  specialties     Json?                     // ["Bridal", "Sherwani", "Tailoring"]
+  specialties     Json? // ["Bridal", "Sherwani", "Tailoring"]
   portfolioUrl    String?
   status          StylistVerificationStatus @default(PENDING)
-  verifiedById    String?                   // AdminUser.id
+  verifiedById    String? // AdminUser.id
   reviewedAt      DateTime?
   rejectionReason String?
   createdAt       DateTime                  @default(now())
@@ -1034,11 +1037,11 @@ model StylistProfile {
 model LookStylistComment {
   id        String   @id @default(cuid())
   lookId    String
-  stylistId String   // StylistProfile.userId
+  stylistId String // StylistProfile.userId
   comment   String
   createdAt DateTime @default(now())
 
-  look      Look @relation(fields: [lookId], references: [id], onDelete: Cascade)
+  look Look @relation(fields: [lookId], references: [id], onDelete: Cascade)
 
   @@index([lookId])
   @@index([stylistId])
@@ -1053,7 +1056,7 @@ model BrandProductVariant {
   size        String
   color       String
   colorHex    String?
-  price       Int?     // Whole rupees
+  price       Int? // Whole rupees
   inStock     Boolean  @default(true)
   stockCount  Int?
   productUrl  String?
@@ -1061,7 +1064,7 @@ model BrandProductVariant {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  brandPost   BrandPost @relation(fields: [brandPostId], references: [id], onDelete: Cascade)
+  brandPost BrandPost @relation(fields: [brandPostId], references: [id], onDelete: Cascade)
 
   @@index([brandPostId])
 }
@@ -1074,7 +1077,7 @@ model BrandWidgetSession {
   success    Boolean  @default(false)
   createdAt  DateTime @default(now())
 
-  brand      Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId, createdAt])
 }
@@ -1084,14 +1087,14 @@ model BrandWidgetSession {
 model ShareEvent {
   id           String    @id @default(cuid())
   lookId       String
-  sharedBy     String    // User.id
-  channel      String    // "whatsapp" | "instagram" | "link"
+  sharedBy     String // User.id
+  channel      String // "whatsapp" | "instagram" | "link"
   token        String    @unique
   openCount    Int       @default(0)
   lastOpenedAt DateTime?
   createdAt    DateTime  @default(now())
 
-  look         Look @relation(fields: [lookId], references: [id], onDelete: Cascade)
+  look Look @relation(fields: [lookId], references: [id], onDelete: Cascade)
 
   @@index([sharedBy])
   @@index([createdAt])
@@ -1103,15 +1106,14 @@ model DrapedResult {
   id           String   @id @default(cuid())
   userId       String
   imageUrl     String
-  slots        Json     // string[] — GarmentSlot values applied, e.g. ["top","shoes"]
-  provider     String   // "replicate" | "gemini"
-  model        String   // model identifier, e.g. "cuuupid/idm-vton" or "gemini-2.0-flash-exp"
+  slots        Json // string[] — GarmentSlot values applied, e.g. ["top","shoes"]
+  provider     String // "replicate" | "gemini"
+  model        String // model identifier, e.g. "cuuupid/idm-vton" or "gemini-2.0-flash-exp"
   noBackground Boolean  @default(false)
   createdAt    DateTime @default(now())
 
   @@index([userId, createdAt])
 }
-
 
 // ─── Credits & payments ───────────────────────────────────────────────────────
 
@@ -1200,4 +1202,126 @@ model UserEmailVerification {
 
   @@index([userId])
   @@index([tokenHash])
+}
+
+// ─── Brand panel: catalog, drops, runway bidding ─────────────────────────────
+
+/// A garment a brand lists. Shoppers see published ones on the brand page.
+model BrandProduct {
+  id            String   @id @default(cuid())
+  brandId       String
+  title         String
+  sku           String
+  price         Float
+  originalPrice Float?
+  images        String[]
+  category      String
+  occasions     String[]
+  colors        String[]
+  sizes         String[]
+  stock         Int      @default(0)
+  isDrapeReady  Boolean  @default(false)
+  drapeScore    Int      @default(0)
+  fitScore      Int?
+  drapesCount   Int      @default(0)
+  clicksCount   Int      @default(0)
+  buyUrl        String
+  featured      Boolean  @default(false)
+  newDrop       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, sku])
+  @@index([brandId, createdAt])
+}
+
+model BrandDrop {
+  id             String   @id @default(cuid())
+  brandId        String
+  title          String
+  collectionName String
+  description    String?
+  launchDate     DateTime
+  bannerUrl      String   @default("")
+  productsCount  Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  brand    Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  waitlist DropWaitlistEntry[]
+
+  @@index([brandId, launchDate])
+}
+
+/// A shopper who asked to be told when a drop goes live.
+model DropWaitlistEntry {
+  id        String   @id @default(cuid())
+  dropId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  drop BrandDrop @relation(fields: [dropId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([dropId, userId])
+  @@index([userId])
+}
+
+enum BidCycleStatus {
+  OPEN
+  CLOSED
+}
+
+/// One auction round (e.g. a month). Admins open it with its slots; it closes at endsAt.
+model BidCycle {
+  id               String         @id @default(cuid())
+  label            String
+  startsAt         DateTime       @default(now())
+  endsAt           DateTime
+  status           BidCycleStatus @default(OPEN)
+  closedAt         DateTime?
+  createdByAdminId String?
+  createdAt        DateTime       @default(now())
+
+  slots BidSlot[]
+
+  @@index([status, endsAt])
+}
+
+model BidSlot {
+  id                  String  @id @default(cuid())
+  cycleId             String
+  rank                Int
+  title               String
+  category            String
+  impressionsEstimate String  @default("")
+  projectedViews      Int     @default(0)
+  projectedDrapes     Int     @default(0)
+  minBid              Int     @default(1000)
+  /// Filled when the cycle closes.
+  winnerBrandId       String?
+  winningAmount       Int?
+  paid                Boolean @default(false)
+
+  cycle BidCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  bids  Bid[]
+
+  @@unique([cycleId, rank])
+}
+
+/// A brand's offer for a slot. The highest bid when the cycle closes wins; payment is settled by staff.
+model Bid {
+  id        String   @id @default(cuid())
+  slotId    String
+  brandId   String
+  amount    Int
+  createdAt DateTime @default(now())
+
+  slot  BidSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  brand Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([slotId, amount])
+  @@index([brandId])
 }

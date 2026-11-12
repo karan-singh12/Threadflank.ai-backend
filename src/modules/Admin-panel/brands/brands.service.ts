@@ -10,6 +10,7 @@ import { buildPaginationMeta } from '../../../common/dto/pagination-query.dto';
 import { AuditLogService } from '../../../shared/audit/audit-log.service';
 import { AuthenticatedAdmin } from '../../../common/interfaces/admin-jwt-payload.interface';
 import { BrandStatus } from '@prisma/client';
+import { PUBLIC_BRAND_SELECT, toPublicBrand } from './public-brand';
 
 @Injectable()
 export class BrandsService {
@@ -78,12 +79,12 @@ export class BrandsService {
         skip,
         take: limit,
         orderBy: { name: 'asc' },
-        select: { id: true, name: true, slug: true, logoUrl: true, description: true, category: true, isVerified: true, socialLinks: true },
+        select: PUBLIC_BRAND_SELECT,
       }),
       this.prisma.brand.count({ where }),
     ]);
 
-    return { brands, meta: buildPaginationMeta(total, page, limit) };
+    return { brands: brands.map(toPublicBrand), meta: buildPaginationMeta(total, page, limit) };
   }
 
   async findOne(id: string) {
