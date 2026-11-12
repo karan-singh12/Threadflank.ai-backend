@@ -1,24 +1,27 @@
 import { Controller, Get, Post, Delete, Param, Query, Body, UseGuards, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { BrandPostsService } from '../../Admin-panel/brand-posts/brand-posts.service';
-import { BrandPostFilterDto } from '../../Admin-panel/brand-posts/dto/brand-post-filter.dto';
+import { CatalogFeedService } from '../catalog-feed/catalog-feed.service';
+import { FeedQueryDto } from '../catalog-feed/feed-query.dto';
 import { AddBrandPostCommentDto } from '../../Admin-panel/brand-posts/dto/add-comment.dto';
 import { AuthGuard } from '../../../common/guards/auth.guard';
 import { OptionalAuthGuard } from '../../../common/guards/optional-auth.guard';
 import { MESSAGES } from '../../../common/constants/messages.constant';
 
-/** App-facing Discover/Trending feed read + engagement surface (PRD §4.5). */
+/**
+ * App-facing Discover/Trending feed and engagement. The route stays /brand-posts so the app keeps working,
+ * but it now reads the brands' catalog: a catalog piece is the post.
+ */
 @ApiTags('Brand Posts (App)')
 @ApiBearerAuth()
 @Controller('brand-posts')
 export class BrandPostsPublicController {
-  constructor(private readonly brandPostsService: BrandPostsService) {}
+  constructor(private readonly brandPostsService: CatalogFeedService) {}
 
   @Get()
   @UseGuards(OptionalAuthGuard)
   @ApiOperation({ summary: 'Discover/Trending feed — published brand posts' })
-  async findAll(@Query() filter: BrandPostFilterDto, @Req() req: any) {
+  async findAll(@Query() filter: FeedQueryDto, @Req() req: any) {
     const userId = req.user?.userId;
     const result = await this.brandPostsService.findAllPublic(filter, userId);
     return { message: MESSAGES.brandPosts.listFetched, data: result.posts, meta: result.meta };

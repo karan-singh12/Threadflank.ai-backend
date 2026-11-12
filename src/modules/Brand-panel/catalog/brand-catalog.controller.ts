@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BrandCatalogService } from './brand-catalog.service';
+import { CatalogPageQueryDto } from './catalog-page.dto';
 import { CreateGarmentDto, UpdateGarmentDto } from '../dto/brand-common.dto';
 import { BrandAuthGuard, CurrentBrand } from '../auth/brand-auth.guard';
 import { AuthenticatedBrand } from '../auth/brand-jwt.strategy';
@@ -13,9 +14,13 @@ export class BrandCatalogController {
   constructor(private readonly catalogService: BrandCatalogService) {}
 
   @Get()
-  @ApiOperation({ summary: "List the brand's garments" })
-  async findAll(@CurrentBrand() brand: AuthenticatedBrand) {
-    return { message: 'Catalog fetched successfully', data: await this.catalogService.findAll(brand.brandId) };
+  @ApiOperation({ summary: "List the brand's garments (send limit / cursor / q / status for pages)" })
+  async findAll(@CurrentBrand() brand: AuthenticatedBrand, @Query() q: CatalogPageQueryDto) {
+    // No paging parameters: the whole list (capped), as older clients expect. Otherwise a cursor page.
+    const paged = Object.values(q).some((v) => v !== undefined);
+    if (!paged) return { message: 'Catalog fetched successfully', data: await this.catalogService.findAll(brand.brandId) };
+    const { items, nextCursor, total } = await this.catalogService.findPage(brand.brandId, q);
+    return { message: 'Catalog fetched successfully', data: items, meta: { limit: q.limit ?? 24, total, nextCursor, hasMore: nextCursor !== null } };
   }
 
   @Get(':id')

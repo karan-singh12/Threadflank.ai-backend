@@ -507,6 +507,8 @@ model Brand {
 
   @@index([status])
   @@index([isDeleted])
+  // The brands directory: live brands in name order.
+  @@index([status, isDeleted, name])
 }
 
 model BrandManagerAssignment {
@@ -1225,16 +1227,35 @@ model BrandProduct {
   fitScore      Int?
   drapesCount   Int      @default(0)
   clicksCount   Int      @default(0)
+  sharesCount   Int      @default(0)
   buyUrl        String
   featured      Boolean  @default(false)
   newDrop       Boolean  @default(false)
+  /// What a post used to hold: the caption, and whether it is live for shoppers.
+  description   String?
+  status        ContentStatus @default(PUBLISHED)
+  scheduledAt   DateTime?
+  publishedAt   DateTime?
+  /// The old BrandPost this piece was created from (set by the migration so it can be re-run safely).
+  sourcePostId  String?  @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  likes    BrandProductLike[]
+  comments BrandProductComment[]
 
   @@unique([brandId, sku])
   @@index([brandId, createdAt])
+  @@index([brandId, status])
+  // Shopper-facing lists: a brand store (newest / price / featured) and the Discover feed.
+  @@index([brandId, status, createdAt])
+  @@index([brandId, status, price])
+  @@index([brandId, status, featured])
+  // The Discover feed walks live pieces newest-first by cursor: (publishedAt, id) is exactly that order.
+  @@index([status, publishedAt(sort: Desc), id(sort: Desc)])
+  @@index([brandId, status, publishedAt(sort: Desc)])
+  @@index([category, status, publishedAt])
 }
 
 model BrandDrop {
@@ -1324,4 +1345,51 @@ model Bid {
 
   @@index([slotId, amount])
   @@index([brandId])
+}
+
+/// A shopper liking a piece (replaces BrandPostLike).
+model BrandProductLike {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  product BrandProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, userId])
+  @@index([userId])
+}
+
+/// A shopper's comment on a piece (replaces BrandPostComment).
+model BrandProductComment {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  product BrandProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt])
+}
+
+enum TaxonomyKind {
+  CATEGORY
+  OCCASION
+}
+
+/// The lists admins manage: the categories shown as Discover pills and the occasions a piece can be tagged for.
+/// Brands pick from these when adding a piece, so the app and the brand panel always agree.
+model DiscoverCategory {
+  id        String       @id @default(cuid())
+  kind      TaxonomyKind @default(CATEGORY)
+  name      String
+  slug      String
+  sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([kind, slug])
+  @@index([kind, isActive, sortOrder])
 }

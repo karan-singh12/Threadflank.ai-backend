@@ -200,6 +200,17 @@ export class CreateGarmentDto {
   @IsBoolean()
   @IsOptional()
   newDrop?: boolean;
+
+  @ApiPropertyOptional({ example: 'Hand-woven silk with zari border, made for festive evenings.' })
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  description?: string;
+
+  @ApiPropertyOptional({ enum: ['DRAFT', 'PUBLISHED'], default: 'PUBLISHED', description: 'DRAFT hides the piece from shoppers' })
+  @IsIn(['DRAFT', 'PUBLISHED'])
+  @IsOptional()
+  status?: 'DRAFT' | 'PUBLISHED';
 }
 
 export class UpdateGarmentDto {
@@ -282,6 +293,17 @@ export class UpdateGarmentDto {
   @IsBoolean()
   @IsOptional()
   newDrop?: boolean;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  description?: string;
+
+  @ApiPropertyOptional({ enum: ['DRAFT', 'PUBLISHED'] })
+  @IsIn(['DRAFT', 'PUBLISHED'])
+  @IsOptional()
+  status?: 'DRAFT' | 'PUBLISHED';
 }
 
 export class PlaceBidDto {

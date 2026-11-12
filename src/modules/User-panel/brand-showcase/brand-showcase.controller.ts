@@ -1,15 +1,51 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OptionalAuthGuard } from '../../../common/guards/optional-auth.guard';
 import { AuthGuard } from '../../../common/guards/auth.guard';
 import { BrandShowcaseService } from './brand-showcase.service';
+import { BrandDirectoryService } from './brand-directory.service';
+import { BrandStoreService } from './brand-store.service';
+import { DirectoryQueryDto, StoreCatalogQueryDto } from './brand-store.dto';
+import { TaxonomyService } from '../../Brand-panel/taxonomy/taxonomy.service';
 
 /** What shoppers see of a brand's own panel data: its catalog, its drops, and the runway spotlight. */
 @ApiTags('Brands (App) — showcase')
 @ApiBearerAuth()
 @Controller('brands')
 export class BrandShowcaseController {
-  constructor(private readonly showcase: BrandShowcaseService) {}
+  constructor(
+    private readonly showcase: BrandShowcaseService,
+    private readonly directory: BrandDirectoryService,
+    private readonly store: BrandStoreService,
+  ) {}
+
+  @Get('directory')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: 'One page of brand cards: search, category, sort (built for 1000+ brands)' })
+  async dir(@Query() q: DirectoryQueryDto) {
+    return { message: 'Brands fetched', data: await this.directory.directory(q) };
+  }
+
+  @Get('directory/categories')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: 'Brand categories with how many brands each has' })
+  async dirCategories() {
+    return { message: 'Categories fetched', data: await this.directory.categories() };
+  }
+
+  @Get(':slug/store')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: "A brand's virtual store: profile, showcase, filters, new in and drops in one call" })
+  async storeHome(@Param('slug') slug: string, @Req() req: any) {
+    return { message: 'Store fetched', data: await this.store.store(slug, req.user?.userId) };
+  }
+
+  @Get(':slug/pieces')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: "A brand's pieces: filtered, sorted, cursor-paginated" })
+  async pieces(@Param('slug') slug: string, @Query() q: StoreCatalogQueryDto, @Req() req: any) {
+    return { message: 'Pieces fetched', data: await this.store.catalog(slug, q, req.user?.userId) };
+  }
 
   @Get('showcase')
   @UseGuards(OptionalAuthGuard)
@@ -76,5 +112,17 @@ export class SpotlightController {
   @ApiOperation({ summary: 'Brands that won the latest runway auction' })
   async spotlight() {
     return { message: 'Spotlight fetched', data: await this.showcase.spotlight() };
+  }
+}
+
+@ApiTags('Discover (App) — categories')
+@Controller('discover')
+export class DiscoverController {
+  constructor(private readonly taxonomy: TaxonomyService) {}
+
+  @Get('categories')
+  @ApiOperation({ summary: 'The categories admins set up for Discover, in order, with how many live pieces each has' })
+  async categories() {
+    return { message: 'Categories fetched', data: await this.taxonomy.publicCategories() };
   }
 }

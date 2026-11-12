@@ -7,6 +7,7 @@ import { AdminRoles } from '../../../common/decorators/admin-roles.decorator';
 import { CurrentAdmin } from '../../../common/decorators/current-admin.decorator';
 import { AuthenticatedAdmin } from '../../../common/interfaces/admin-jwt-payload.interface';
 import { BrandPortalService } from './brand-portal.service';
+import { CatalogPageQueryDto } from '../../Brand-panel/catalog/catalog-page.dto';
 import { AdjustCreditsDto, BrandPortalFilterDto, SetAccountActiveDto, VerificationDecisionDto } from './brand-portal.dto';
 
 @ApiTags('Admin Panel — Brand portal')
@@ -38,8 +39,9 @@ export class BrandPortalController {
 
   @Get('brands/:id/catalog')
   @ApiOperation({ summary: "A brand's garment catalog" })
-  async catalog(@Param('id') id: string, @CurrentAdmin() admin: AuthenticatedAdmin) {
-    return { message: 'Catalog fetched', data: await this.service.catalogOf(id, admin) };
+  async catalog(@Param('id') id: string, @CurrentAdmin() admin: AuthenticatedAdmin, @Query() q: CatalogPageQueryDto) {
+    const { items, nextCursor, total } = await this.service.catalogOf(id, admin, q);
+    return { message: 'Catalog fetched', data: items, meta: { limit: q.limit ?? 24, total, nextCursor, hasMore: nextCursor !== null } };
   }
 
   @Delete('brands/:id/catalog/:itemId')

@@ -29,6 +29,7 @@ import { AdminAuthModule } from "./modules/Admin-panel/admin-auth/admin-auth.mod
 import { AdminUsersModule } from "./modules/Admin-panel/admin-users/admin-users.module";
 import { BrandsModule } from "./modules/Admin-panel/brands/brands.module";
 import { BrandShowcaseModule } from "./modules/User-panel/brand-showcase/brand-showcase.module";
+import { DiscoverCategoriesModule } from "./modules/Admin-panel/discover-categories/discover-categories.module";
 import { BrandPortalModule } from "./modules/Admin-panel/brand-portal/brand-portal.module";
 import { BrandPostsModule } from "./modules/Admin-panel/brand-posts/brand-posts.module";
 import { BrandStoriesModule } from "./modules/Admin-panel/brand-stories/brand-stories.module";
@@ -97,6 +98,9 @@ import { BrandPanelModule } from "./modules/Brand-panel/brand-panel.module";
             },
           ],
           storage,
+          // Local development is never rate limited (repeated logins while testing would hit 429).
+          // Set THROTTLE_ENABLED=true to test limits locally; production always has them on.
+          skipIf: () => process.env.NODE_ENV !== "production" && process.env.THROTTLE_ENABLED !== "true",
         };
       },
     }),
@@ -129,6 +133,7 @@ import { BrandPanelModule } from "./modules/Brand-panel/brand-panel.module";
     AdminUsersModule,
     BrandsModule,
     BrandPortalModule,
+    DiscoverCategoriesModule,
     BrandShowcaseModule,
     BrandPostsModule,
     BrandStoriesModule,
