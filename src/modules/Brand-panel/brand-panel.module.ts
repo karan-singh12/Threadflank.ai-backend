@@ -5,6 +5,7 @@ import { AppLogger } from '../../shared/logger/logger.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { StorageModule } from '../../shared/storage/storage.module';
 import { UploadsModule } from '../User-panel/uploads/uploads.module';
+import { SdkModule } from '../../sdk';
 
 // Controllers
 import { BrandAuthController } from './auth/brand-auth.controller';
@@ -34,6 +35,7 @@ import { BrandUploadService } from './upload/brand-upload.service';
     StorageModule.register(),
     UploadsModule,
     MailerModule,
+    SdkModule,
     // No default secret: BrandJwtStrategy always passes its own, so brand tokens never share the user secret.
     JwtModule.register({}),
   ],

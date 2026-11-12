@@ -5,6 +5,7 @@ import { ClientFactory } from './core/client-factory';
 import { ModelRouter } from './core/router/model-router';
 import { AiRequestLoggerService } from './logging/ai-request-logger.service';
 import { CaptionGenerationChain } from './chains/caption-generation.chain';
+import { BrandContentChain } from './chains/brand-content.chain';
 import { OccasionPlannerAgent } from './agents/occasion-planner.agent';
 import { WardrobeCombosAgent } from './agents/wardrobe-combos.agent';
 import { VectorStoreClient } from './rag/store/vector-store.client';
@@ -22,6 +23,7 @@ const PROVIDERS = [
   ModelRouter,
   AiRequestLoggerService,
   CaptionGenerationChain,
+  BrandContentChain,
   OccasionPlannerAgent,
   WardrobeCombosAgent,
   VectorStoreClient,

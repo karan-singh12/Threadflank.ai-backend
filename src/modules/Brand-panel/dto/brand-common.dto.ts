@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail, IsInt, IsISO8601, Matches, ValidateIf, MinLength, MaxLength, Min, Max } from 'class-validator';
+import { ArrayMaxSize, IsIn, IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail, IsInt, IsISO8601, Matches, ValidateIf, MinLength, MaxLength, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateBrandProfileDto {
@@ -413,3 +413,46 @@ export class TrackClickDto {
   source?: string;
 }
 
+export class GenerateContentDto {
+  @ApiProperty({ enum: ['product_description', 'instagram_caption', 'launch_announcement', 'email_blurb', 'seo_meta'] })
+  @IsIn(['product_description', 'instagram_caption', 'launch_announcement', 'email_blurb', 'seo_meta'])
+  contentType!: 'product_description' | 'instagram_caption' | 'launch_announcement' | 'email_blurb' | 'seo_meta';
+
+  @ApiPropertyOptional({ description: "One of this brand's garments; leave out for brand-level copy" })
+  @IsString()
+  @IsOptional()
+  garmentId?: string;
+
+  @ApiProperty({ enum: ['luxe', 'playful', 'minimal', 'festive', 'bold'] })
+  @IsIn(['luxe', 'playful', 'minimal', 'festive', 'bold'])
+  tone!: 'luxe' | 'playful' | 'minimal' | 'festive' | 'bold';
+
+  @ApiProperty({ enum: ['english', 'hindi', 'hinglish'] })
+  @IsIn(['english', 'hindi', 'hinglish'])
+  language!: 'english' | 'hindi' | 'hinglish';
+
+  @ApiProperty({ enum: ['short', 'medium', 'long'] })
+  @IsIn(['short', 'medium', 'long'])
+  length!: 'short' | 'medium' | 'long';
+
+  @ApiPropertyOptional({ type: [String], maxItems: 8 })
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  @MaxLength(30, { each: true })
+  @IsOptional()
+  keywords?: string[];
+
+  @ApiPropertyOptional({ maxLength: 300 })
+  @IsString()
+  @MaxLength(300)
+  @IsOptional()
+  notes?: string;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 3, default: 3 })
+  @IsInt()
+  @Min(1)
+  @Max(3)
+  @IsOptional()
+  variants?: number;
+}
