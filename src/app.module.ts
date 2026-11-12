@@ -28,6 +28,7 @@ import { SdkModule } from "./sdk";
 import { AdminAuthModule } from "./modules/Admin-panel/admin-auth/admin-auth.module";
 import { AdminUsersModule } from "./modules/Admin-panel/admin-users/admin-users.module";
 import { BrandsModule } from "./modules/Admin-panel/brands/brands.module";
+import { BrandPortalModule } from "./modules/Admin-panel/brand-portal/brand-portal.module";
 import { BrandPostsModule } from "./modules/Admin-panel/brand-posts/brand-posts.module";
 import { BrandStoriesModule } from "./modules/Admin-panel/brand-stories/brand-stories.module";
 import { EmailTemplatesModule } from "./modules/Admin-panel/email-templates/email-templates.module";
@@ -126,6 +127,7 @@ import { BrandPanelModule } from "./modules/Brand-panel/brand-panel.module";
     AdminAuthModule,
     AdminUsersModule,
     BrandsModule,
+    BrandPortalModule,
     BrandPostsModule,
     BrandStoriesModule,
     EmailTemplatesModule,
