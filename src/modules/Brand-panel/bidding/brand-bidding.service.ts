@@ -117,7 +117,7 @@ export class BrandBiddingService {
 
   /** Slots this brand has won in closed auctions, newest first. */
   async wins(brandId: string) {
-    const slots = await this.prisma.bidSlot.findMany({ where: { winnerBrandId: brandId }, orderBy: { cycle: { endsAt: 'desc' } }, include: { cycle: { select: { label: true, endsAt: true } } }, take: 20 });
+    const slots = await this.prisma.bidSlot.findMany({ where: { winnerBrandId: brandId }, orderBy: { cycle: { closedAt: 'desc' } }, include: { cycle: { select: { label: true, endsAt: true } } }, take: 20 });
     return slots.map((s) => ({ rank: s.rank, title: s.title, category: s.category, amount: s.winningAmount, period: s.cycle.label, endedAt: s.cycle.endsAt.toISOString(), paid: s.paid }));
   }
 
@@ -229,7 +229,7 @@ export class BrandBiddingService {
   async spotlight() {
     const cycle = await this.prisma.bidCycle.findFirst({
       where: { status: BidCycleStatus.CLOSED, slots: { some: { winnerBrandId: { not: null } } } },
-      orderBy: { endsAt: 'desc' },
+      orderBy: { closedAt: 'desc' },
       include: { slots: { where: { winnerBrandId: { not: null } }, orderBy: { rank: 'asc' } } },
     });
     if (!cycle) return { period: null, brands: [] };
