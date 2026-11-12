@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CaptionGenerationChain } from './chains/caption-generation.chain';
+import { BrandContentChain } from './chains/brand-content.chain';
+import { BrandContentInput } from './prompts/brand-content.prompt';
 import { OccasionPlannerAgent, OccasionPlanResult } from './agents/occasion-planner.agent';
 import { WardrobeCombosAgent, WardrobeCombo } from './agents/wardrobe-combos.agent';
 import { RagQueryService, RagQueryResult } from './rag/rag-query.service';
@@ -22,6 +24,7 @@ import { AiRequestLoggerService, AiRequestLogInput } from './logging/ai-request-
 export class SdkService {
   constructor(
     private readonly captionChain: CaptionGenerationChain,
+    private readonly brandContentChain: BrandContentChain,
     private readonly occasionAgent: OccasionPlannerAgent,
     private readonly combosAgent: WardrobeCombosAgent,
     private readonly ragQueryService: RagQueryService,
@@ -32,6 +35,11 @@ export class SdkService {
 
   generateCaption(input: CaptionPromptInput, opts: { override?: RouteOverride; requestedBy?: string } = {}): Promise<string> {
     return this.captionChain.run(input, opts);
+  }
+
+  /** Several editable copy options for a brand (descriptions, captions, announcements, email, SEO). */
+  generateBrandContent(input: BrandContentInput, opts: { override?: RouteOverride; requestedBy?: string } = {}): Promise<string[]> {
+    return this.brandContentChain.run(input, opts);
   }
 
   runOccasionPlanner(userId: string, input: OccasionPromptInput): Promise<OccasionPlanResult> {

@@ -67,7 +67,7 @@ describe('Flagship store needs an address', () => {
 describe('AI Studio never charges for a placeholder', () => {
   it('returns 503 and leaves credits untouched', async () => {
     const prisma: any = { brand: { findUnique: jest.fn(), updateMany: jest.fn() } };
-    const svc = new BrandAiStudioService(prisma, {} as any);
+    const svc = new BrandAiStudioService(prisma, {} as any, {} as any);
     await expect(svc.simulateVideo('b', { customImageUrl: 'https://x/y.jpg', motionPreset: 'red_carpet', motionIntensity: 50 } as any)).rejects.toThrow(ServiceUnavailableException);
     expect(prisma.brand.findUnique).not.toHaveBeenCalled();
     expect(prisma.brand.updateMany).not.toHaveBeenCalled();
