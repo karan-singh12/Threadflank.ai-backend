@@ -78,7 +78,9 @@ export class BrandPortalService {
       }),
       this.prisma.brand.count({ where }),
     ]);
-    const brands = await Promise.all(rows.map(async (b) => ({ ...b, catalogCount: (await this.catalog.findAll(b.id)).length })));
+    const counts = await this.prisma.brandProduct.groupBy({ by: ['brandId'], where: { brandId: { in: rows.map((b) => b.id) } }, _count: { _all: true } });
+    const byBrand = new Map(counts.map((c) => [c.brandId, c._count._all]));
+    const brands = rows.map((b) => ({ ...b, catalogCount: byBrand.get(b.id) ?? 0 }));
     return { brands, meta: buildPaginationMeta(total, page, limit) };
   }
 
@@ -94,14 +96,8 @@ export class BrandPortalService {
 
   async detail(id: string, admin: AuthenticatedAdmin) {
     const brand = await this.getBrand(id, admin);
-    const [catalog, metrics] = await Promise.all([this.catalog.findAll(id), this.analytics.getOverview(id)]);
-    return {
-      brand,
-      metrics,
-      catalogCount: catalog.length,
-      dropsCount: this.drops.findAll(id).length,
-      bidsCount: this.bidding.findAll(id).filter((s) => s.yourCurrentBid !== undefined).length,
-    };
+    const [catalogCount, dropsCount, bids, metrics] = await Promise.all([this.catalog.count(id), this.drops.count(id), this.bidding.findAll(id), this.analytics.getOverview(id)]);
+    return { brand, metrics, catalogCount, dropsCount, bidsCount: bids.filter((s) => s.yourCurrentBid !== undefined).length };
   }
 
   async catalogOf(id: string, admin: AuthenticatedAdmin) {

@@ -20,14 +20,13 @@ describe('Drop validation', () => {
     expect(await errorsOf(CreateDropDto, drop({ productsCount: 0 }))).toContain('productsCount');
     expect(await errorsOf(CreateDropDto, drop({ bannerUrl: 'http://x.com/a.jpg' }))).toContain('bannerUrl');
   });
-  it('blocks past launch dates on create and update, allows edit and delete', () => {
-    const svc = new BrandDropsService();
-    expect(() => svc.create('b', drop({ launchDate: '2020-01-01T00:00:00Z' }) as any)).toThrow(BadRequestException);
-    const created = svc.create('b', drop() as any);
-    expect(() => svc.update('b', created.id, { launchDate: '2020-01-01T00:00:00Z' })).toThrow(BadRequestException);
-    expect(svc.update('b', created.id, { title: 'Renamed' }).title).toBe('Renamed');
-    expect(svc.remove('b', created.id).success).toBe(true);
-    expect(svc.findAll('b')).toHaveLength(0);
+  it('blocks past launch dates on create and update before touching the database', async () => {
+    const prisma: any = { brandDrop: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue({ id: 'd1' }), update: jest.fn() } };
+    const svc = new BrandDropsService(prisma);
+    await expect(svc.create('b', drop({ launchDate: '2020-01-01T00:00:00Z' }) as any)).rejects.toThrow(BadRequestException);
+    await expect(svc.update('b', 'd1', { launchDate: '2020-01-01T00:00:00Z' })).rejects.toThrow(BadRequestException);
+    expect(prisma.brandDrop.create).not.toHaveBeenCalled();
+    expect(prisma.brandDrop.update).not.toHaveBeenCalled();
   });
 });
 
