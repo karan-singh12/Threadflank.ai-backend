@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SimulateVideoDto } from '../dto/brand-common.dto';
 import { BrandCatalogService } from '../catalog/brand-catalog.service';
@@ -80,11 +80,15 @@ export class BrandAiStudioService {
       throw new BadRequestException('Choose a garment that has a photo, or upload one, before rendering.');
     }
 
+    // The Veo-2 integration is not wired yet, so there is no real video to deliver. Never charge for,
+    // or return, a placeholder clip. Set BRAND_VIDEO_PLACEHOLDER=true in dev to exercise the old flow.
+    if (process.env.BRAND_VIDEO_PLACEHOLDER !== 'true') {
+      throw new ServiceUnavailableException('Motion video rendering is not available yet. No credits were charged.');
+    }
+
     const remainingCredits = await this.spendCredits(brandId, COST_PER_SIMULATION);
     const preset = this.presets.find((p) => p.id === dto.motionPreset) || this.presets[0];
 
-    // NOTE: the Veo-2 integration is not wired yet. The clip below is a placeholder sample;
-    // credits are still charged so the rest of the flow can be exercised.
     return {
       simulationId: `sim_${Date.now()}`,
       status: 'completed',

@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BrandDropsService } from './brand-drops.service';
-import { CreateDropDto } from '../dto/brand-common.dto';
+import { CreateDropDto, UpdateDropDto } from '../dto/brand-common.dto';
 import { BrandAuthGuard, CurrentBrand } from '../auth/brand-auth.guard';
 import { AuthenticatedBrand } from '../auth/brand-jwt.strategy';
 
@@ -22,5 +22,17 @@ export class BrandDropsController {
   @ApiOperation({ summary: 'Schedule a new capsule drop' })
   create(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: CreateDropDto) {
     return { message: 'Drop created and waitlist activated', data: this.dropsService.create(brand.brandId, dto) };
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Edit a drop' })
+  update(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string, @Body() dto: UpdateDropDto) {
+    return { message: 'Drop updated', data: this.dropsService.update(brand.brandId, id, dto) };
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a drop' })
+  remove(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string) {
+    return { message: 'Drop deleted', data: this.dropsService.remove(brand.brandId, id) };
   }
 }
