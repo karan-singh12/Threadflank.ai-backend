@@ -15,7 +15,7 @@
  *   - frontend/src/app/api/tryon/route.ts    — reads REPLICATE_API_TOKEN, fetches api.replicate.com
  *   - frontend/src/lib/server/image-engine.ts — reads all four provider keys
  *   - frontend/src/lib/server/replicate.ts    — reads REPLICATE_API_TOKEN
- *   - backend/src/modules/twin/twin.service.ts — contains callAiGeneration()
+ *   - backend/src/modules/User-panel/twin/twin.service.ts — contains callAiGeneration()
  */
 
 import * as fs from "fs";
@@ -27,7 +27,7 @@ import * as path from "path";
 const FRONTEND_SRC = path.resolve(__dirname, "../../../../frontend/src");
 const TWIN_SERVICE = path.resolve(
     __dirname,
-    "../../modules/twin/twin.service.ts"
+    "../../modules/User-panel/twin/twin.service.ts"
 );
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

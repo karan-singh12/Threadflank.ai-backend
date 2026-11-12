@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { Observable, from } from "rxjs";
 import { switchMap } from "rxjs/operators";
-import { UploadsService } from "../../modules/uploads/uploads.service";
+import { UploadsService } from "../../modules/User-panel/uploads/uploads.service";
 
 @Injectable()
 export class MultipartInterceptor implements NestInterceptor {
