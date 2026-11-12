@@ -21,6 +21,23 @@ export class BrandShowcaseService {
     return brand;
   }
 
+  /** Every approved brand with a preview of its catalog and its upcoming drops, in one call for the Brands page. */
+  async all(userId?: string) {
+    const brands = await this.prisma.brand.findMany({
+      where: { isDeleted: false, status: 'ACTIVE' },
+      select: PUBLIC_BRAND_SELECT,
+      orderBy: { name: 'asc' },
+      take: 40,
+    });
+    return Promise.all(
+      brands.map(async (brand) => ({
+        brand: toPublicBrand(brand),
+        products: await this.catalogSvc.listPublic(brand.id, 12),
+        drops: await this.dropsSvc.listPublic(brand.id, userId),
+      })),
+    );
+  }
+
   async catalog(slug: string) {
     const brand = await this.activeBrand(slug);
     return { brand: toPublicBrand(brand), products: await this.catalogSvc.listPublic(brand.id) };

@@ -121,6 +121,17 @@ const psql = (sql) => execSync(`docker exec outfit-postgres psql -U outfit -d ou
   check('click returns store link', click.data?.buyUrl === 'https://example.com/p/1');
   check('click counted in brand catalog', (await call('GET', `/brand/catalog/${g1.data.id}`, null, tokA)).data?.clicksCount === 1);
   check('click on unknown garment -> 404', (await call('POST', '/brands/products/nope/click')).status === 404);
+  const go = await fetch(BASE + `/brands/products/${g1.data.id}/go`, { redirect: 'manual' });
+  check('Buy link redirects to the brand store (302)', go.status === 302 && go.headers.get('location') === 'https://example.com/p/1', go.status + ' ' + go.headers.get('location'));
+  check('Buy redirect is counted too', (await call('GET', `/brand/catalog/${g1.data.id}`, null, tokA)).data?.clicksCount === 2);
+  check('unknown garment on /go -> 404', (await fetch(BASE + '/brands/products/nope/go', { redirect: 'manual' })).status === 404);
+
+  console.log('\n[8b] Showcase (shopper Brands page)');
+  const show = await call('GET', '/brands/showcase');
+  const mine = show.data?.find((e) => e.brand.slug === slugA);
+  check('showcase lists the approved brand with its catalog', mine?.products?.length === 1 && mine.products[0].title === 'Zari Lehenga v2', JSON.stringify(show.json).slice(0, 200));
+  check('showcase includes the brand drop, not joined', mine?.drops?.[0]?.id === d1.data.id && mine.drops[0].joined === false);
+  check('showcase has no private fields or SKUs', !/workEmail|aiCredits|verification|"sku"/.test(JSON.stringify(show.json)));
 
   console.log('\n[9] Drop waitlist (shopper)');
   const email = `qa-shopper-${ts}@local.test`;
@@ -176,7 +187,7 @@ const psql = (sql) => execSync(`docker exec outfit-postgres psql -U outfit -d ou
   console.log('\n[11] Admin portal view');
   const det = await call('GET', `/admin-panel/brand-portal/brands/${bA.id}`, null, admin);
   check('detail shows catalog 1, drops 1, bids 1', det.data?.catalogCount === 1 && det.data?.dropsCount === 1 && det.data?.bidsCount === 0 || det.data?.bidsCount === 0, JSON.stringify(det.json).slice(0, 200));
-  check('metrics show 1 click-out', det.data?.metrics?.clickOuts?.total === 1);
+  check('metrics show 2 click-outs', det.data?.metrics?.clickOuts?.total === 2);
   check('admin catalog view', (await call('GET', `/admin-panel/brand-portal/brands/${bA.id}/catalog`, null, admin)).data?.length === 1);
   check('admin removes garment', (await call('DELETE', `/admin-panel/brand-portal/brands/${bA.id}/catalog/${g1.data.id}`, null, admin)).status < 300);
   check('catalog empty after moderation', (await call('GET', '/brand/catalog', null, tokA)).data?.length === 0);

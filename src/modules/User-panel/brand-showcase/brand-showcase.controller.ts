@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, HttpStatus, NotFoundException, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OptionalAuthGuard } from '../../../common/guards/optional-auth.guard';
 import { AuthGuard } from '../../../common/guards/auth.guard';
@@ -10,6 +10,13 @@ import { BrandShowcaseService } from './brand-showcase.service';
 @Controller('brands')
 export class BrandShowcaseController {
   constructor(private readonly showcase: BrandShowcaseService) {}
+
+  @Get('showcase')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: 'Every approved brand with a catalog preview and upcoming drops (the Brands page)' })
+  async all(@Req() req: any) {
+    return { message: 'Showcase fetched', data: await this.showcase.all(req.user?.userId) };
+  }
 
   @Get(':slug/catalog')
   @UseGuards(OptionalAuthGuard)
@@ -38,6 +45,16 @@ export class BrandShowcaseController {
   @ApiOperation({ summary: 'Leave the waitlist for a drop' })
   async leave(@Param('dropId') dropId: string, @Req() req: any) {
     return { message: 'You left the waitlist', data: await this.showcase.leaveWaitlist(dropId, req.user.userId) };
+  }
+
+  /** Plain link target for the Buy button: counts the click, then sends the shopper to the brand's store. */
+  @Get('products/:productId/go')
+  @ApiOperation({ summary: "Count a Buy tap and redirect to the brand's store page" })
+  async go(@Param('productId') productId: string, @Res() reply: any) {
+    const result = await this.showcase.click(productId);
+    if (!result) throw new NotFoundException('Garment not found');
+    // Sent on the raw reply: the global response wrapper would otherwise turn a redirect into JSON.
+    reply.status(302).header('Location', result.buyUrl).send();
   }
 
   @Post('products/:productId/click')

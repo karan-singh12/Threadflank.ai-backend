@@ -168,11 +168,11 @@ export class BrandCatalogService {
 
   // ── Shopper-facing ──────────────────────────────────────────────────────
 
-  async listPublic(brandId: string): Promise<PublicProduct[]> {
+  async listPublic(brandId: string, limit = 200): Promise<PublicProduct[]> {
     const rows = await this.prisma.brandProduct.findMany({
       where: { brandId },
       orderBy: [{ featured: 'desc' }, { createdAt: 'desc' }],
-      take: 200,
+      take: limit,
     });
     return rows.map(toPublic);
   }
