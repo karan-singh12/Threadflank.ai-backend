@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UpdateBrandProfileDto } from '../dto/brand-common.dto';
@@ -20,6 +20,12 @@ export class BrandProfileService {
     if (!existing || existing.isDeleted) throw new NotFoundException('Brand not found.');
 
     const social = ((existing.socialLinks as Record<string, any> | null) ?? {});
+    const willBeOnlineOnly = dto.isOnlineOnly ?? social.isOnlineOnly ?? true;
+    const address = (dto.physicalStoreAddress ?? social.flagshipAddress ?? '').trim();
+    if (willBeOnlineOnly === false && !address) {
+      throw new BadRequestException('Add your flagship store address, or switch the store type to Online only.');
+    }
+
     const updatedSocial = {
       ...social,
       ...(dto.themeAccent !== undefined ? { themeAccent: dto.themeAccent } : {}),

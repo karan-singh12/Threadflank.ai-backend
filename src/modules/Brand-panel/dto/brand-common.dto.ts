@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail, MinLength, MaxLength, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail, IsInt, IsISO8601, Matches, ValidateIf, MinLength, MaxLength, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateBrandProfileDto {
@@ -188,6 +188,7 @@ export class CreateGarmentDto {
 
   @ApiProperty({ example: 'https://rawmango.com/shop/lehengas/varanasi-gold' })
   @IsString()
+  @Matches(/^https:\/\//i, { message: 'Links must start with https://' })
   buyUrl!: string;
 
   @ApiPropertyOptional({ example: true })
@@ -269,6 +270,7 @@ export class UpdateGarmentDto {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
+  @Matches(/^https:\/\//i, { message: 'Links must start with https://' })
   buyUrl?: string;
 
   @ApiPropertyOptional()
@@ -292,27 +294,77 @@ export class PlaceBidDto {
 export class CreateDropDto {
   @ApiProperty({ example: 'Kashi Heritage Wedding Collection 26' })
   @IsString()
+  @MinLength(2)
+  @MaxLength(120)
   title!: string;
 
   @ApiProperty({ example: 'The Royal Banaras Chapter' })
   @IsString()
+  @MinLength(2)
+  @MaxLength(120)
   collectionName!: string;
 
   @ApiPropertyOptional({ example: 'A hand-woven Banarasi tribute to timeless royal celebrations.' })
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   description?: string;
 
-  @ApiProperty({ example: '2026-11-20T18:00:00Z' })
-  @IsString()
+  @ApiProperty({ example: '2026-11-20T18:00:00Z', description: 'ISO date; must not be in the past' })
+  @IsISO8601()
   launchDate!: string;
 
-  @ApiProperty({ example: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d' })
+  @ApiProperty({ example: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d', description: 'Optional: empty or an https link' })
   @IsString()
+  @ValidateIf((o) => !!o.bannerUrl)
+  @Matches(/^https:\/\//i, { message: 'Links must start with https://' })
   bannerUrl!: string;
 
-  @ApiPropertyOptional({ example: 12 })
-  @IsNumber()
+  @ApiPropertyOptional({ example: 12, maximum: 10000 })
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  @IsOptional()
+  productsCount?: number;
+}
+
+export class UpdateDropDto {
+  @ApiPropertyOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  @IsOptional()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  @IsOptional()
+  collectionName?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MaxLength(1000)
+  @IsOptional()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsISO8601()
+  @IsOptional()
+  launchDate?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @ValidateIf((o) => !!o.bannerUrl)
+  @Matches(/^https:\/\//i, { message: 'Links must start with https://' })
+  @IsOptional()
+  bannerUrl?: string;
+
+  @ApiPropertyOptional({ maximum: 10000 })
+  @IsInt()
+  @Min(1)
+  @Max(10000)
   @IsOptional()
   productsCount?: number;
 }
@@ -340,6 +392,7 @@ export class SimulateVideoDto {
 
   @ApiPropertyOptional({ example: 'A dramatic runway glide in slow motion under warm spotlight' })
   @IsString()
+  @MaxLength(300)
   @IsOptional()
   prompt?: string;
 
