@@ -471,6 +471,7 @@ model AdminAuditLog {
 enum BrandStatus {
   ACTIVE
   INACTIVE
+  PENDING // self-registered brand waiting for admin approval; hidden from shoppers
 }
 
 model Brand {
@@ -532,12 +533,14 @@ model BrandAccount {
   name        String
   role        BrandAccountRole @default(OWNER)
   isActive    Boolean          @default(true)
+  emailVerified Boolean        @default(false)
   lastLoginAt DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
   brand         Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
   refreshTokens BrandRefreshToken[]
+  authTokens    BrandAuthToken[]
 
   @@index([brandId])
 }
@@ -559,6 +562,27 @@ model BrandRefreshToken {
 }
 
 // ─── Brand Editorial Posts ────────────────────────────────────────────────────
+
+enum BrandAuthTokenPurpose {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+/// One-time emailed links (verify email, reset password). Only the hash of the token is stored.
+model BrandAuthToken {
+  id             String                 @id @default(cuid())
+  brandAccountId String
+  purpose        BrandAuthTokenPurpose
+  tokenHash      String
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime               @default(now())
+
+  brandAccount BrandAccount @relation(fields: [brandAccountId], references: [id], onDelete: Cascade)
+
+  @@index([brandAccountId, purpose])
+  @@index([tokenHash])
+}
 
 enum ContentStatus {
   DRAFT
