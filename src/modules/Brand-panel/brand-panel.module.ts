@@ -16,6 +16,8 @@ import { BrandAiStudioController } from './ai-studio/brand-ai-studio.controller'
 import { BrandBiddingController } from './bidding/brand-bidding.controller';
 import { BrandDropsController } from './drops/brand-drops.controller';
 import { BrandUploadController } from './upload/brand-upload.controller';
+import { BrandTeamController } from './team/brand-team.controller';
+import { BrandWidgetController } from './widget/brand-widget.controller';
 
 // Services
 import { BrandAuthService } from './auth/brand-auth.service';
@@ -28,6 +30,7 @@ import { BrandAiStudioService } from './ai-studio/brand-ai-studio.service';
 import { BrandBiddingService } from './bidding/brand-bidding.service';
 import { BrandDropsService } from './drops/brand-drops.service';
 import { BrandUploadService } from './upload/brand-upload.service';
+import { BrandWidgetService } from './widget/brand-widget.service';
 
 @Module({
   imports: [
@@ -48,6 +51,8 @@ import { BrandUploadService } from './upload/brand-upload.service';
     BrandBiddingController,
     BrandDropsController,
     BrandUploadController,
+    BrandTeamController,
+    BrandWidgetController,
   ],
   providers: [
     AppLogger,
@@ -61,6 +66,7 @@ import { BrandUploadService } from './upload/brand-upload.service';
     BrandBiddingService,
     BrandDropsService,
     BrandUploadService,
+    BrandWidgetService,
   ],
   exports: [
     BrandAuthService,

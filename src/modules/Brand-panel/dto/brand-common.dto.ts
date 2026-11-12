@@ -456,3 +456,42 @@ export class GenerateContentDto {
   @IsOptional()
   variants?: number;
 }
+
+export class ChangePasswordDto {
+  @ApiProperty()
+  @IsString()
+  currentPassword!: string;
+
+  @ApiProperty({ example: 'luxury2026' })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  newPassword!: string;
+}
+
+export class InviteMemberDto {
+  @ApiProperty({ example: 'stylist@rawmango.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: 'Asha Verma' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  name!: string;
+}
+
+export class SetMemberActiveDto {
+  @ApiProperty()
+  @IsBoolean()
+  isActive!: boolean;
+}
+
+export class WidgetDomainsDto {
+  @ApiProperty({ type: [String], example: ['https://shop.rawmango.com'], description: 'Storefront origins allowed to load the widget; empty means anywhere' })
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  domains!: string[];
+}

@@ -9,6 +9,9 @@ import { MailerService } from '../../../shared/mailer/mailer.service';
 import { AppLogger } from '../../../shared/logger/logger.service';
 import { passwordResetEmailHtml, verificationEmailHtml } from '../../../common/utils/email.util';
 
+const INVITE_EXPIRY_HOURS = 72;
+const escapeHtml = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
 export interface RequestMeta {
   ip?: string;
   userAgent?: string;
@@ -127,6 +130,7 @@ export class BrandAuthService {
     });
 
     await this.sendVerificationEmail(account, brand.name);
+    this.notifyStaffOfApplication(brand.name, account.email);
     // No session yet: the brand must open the emailed link first.
     return { requiresVerification: true as const, email: account.email, brand: { name: brand.name } };
   }
@@ -256,5 +260,87 @@ export class BrandAuthService {
       // Sign out every device still holding sessions from the old password.
       this.prisma.brandRefreshToken.updateMany({ where: { brandAccountId: record.brandAccountId, revokedAt: null }, data: { revokedAt: new Date() } }),
     ]);
+  }
+
+  /** Best effort: tell the team a brand applied. Set ADMIN_NOTIFY_EMAIL (comma-separated) to turn it on. */
+  private notifyStaffOfApplication(brandName: string, workEmail: string) {
+    const to = (process.env.ADMIN_NOTIFY_EMAIL ?? '').split(',').map((e) => e.trim()).filter(Boolean);
+    for (const address of to) {
+      this.mailer
+        .send({ to: address, subject: `New brand application: ${brandName}`, html: `<p><b>${escapeHtml(brandName)}</b> (${escapeHtml(workEmail)}) applied to join Threadflank and is waiting for review in the admin panel, under Brands &gt; Brand Portal.</p>` })
+        .catch((e) => this.logger.warn('BrandAuthService', `Staff notification not delivered: ${e?.message ?? e}`));
+    }
+  }
+
+  // ─── Signed-in account: change password ────────────────────────────────────
+
+  async changePassword(brandAccountId: string, currentPassword: string, newPassword: string) {
+    const account = await this.prisma.brandAccount.findUnique({ where: { id: brandAccountId } });
+    if (!account || !account.isActive) throw new UnauthorizedException('Sign in to continue.');
+    if (!(await bcrypt.compare(currentPassword, account.password))) throw new BadRequestException('Your current password is not correct.');
+    if (await bcrypt.compare(newPassword, account.password)) throw new BadRequestException('Choose a password you have not used just now.');
+    const password = await bcrypt.hash(newPassword, 10);
+    await this.prisma.$transaction([
+      this.prisma.brandAccount.update({ where: { id: brandAccountId }, data: { password } }),
+      // Every device, including this one, signs in again with the new password.
+      this.prisma.brandRefreshToken.updateMany({ where: { brandAccountId, revokedAt: null }, data: { revokedAt: new Date() } }),
+    ]);
+  }
+
+  // ─── Team: the owner invites teammates ─────────────────────────────────────
+
+  private async requireOwner(brandAccountId: string, brandId: string) {
+    const me = await this.prisma.brandAccount.findUnique({ where: { id: brandAccountId } });
+    if (!me || !me.isActive || me.brandId !== brandId) throw new UnauthorizedException('Sign in to continue.');
+    if (me.role !== 'OWNER') throw new ForbiddenException('Only the brand owner can manage the team.');
+    return me;
+  }
+
+  async listTeam(brandId: string) {
+    const rows = await this.prisma.brandAccount.findMany({ where: { brandId }, orderBy: { createdAt: 'asc' } });
+    return rows.map((a) => ({ id: a.id, name: a.name, email: a.email, role: a.role, isActive: a.isActive, pending: !a.emailVerified, lastLoginAt: a.lastLoginAt?.toISOString() ?? null }));
+  }
+
+  private async sendInvite(account: { id: string; email: string; name: string }, brandName: string, inviterName: string) {
+    const raw = await this.createToken(account.id, 'PASSWORD_RESET', INVITE_EXPIRY_HOURS * 3_600_000);
+    const base = (process.env.BRAND_PASSWORD_RESET_URL || 'http://localhost:3000/reset-password').replace(/\/+$/, '');
+    const url = `${base}/${raw}`;
+    this.sendInBackground('team invite', url, {
+      to: account.email,
+      subject: `${inviterName} invited you to ${brandName} on Threadflank`,
+      html: `<p>Hi ${escapeHtml(account.name)},</p><p>${escapeHtml(inviterName)} added you to the <b>${escapeHtml(brandName)}</b> brand panel on Threadflank. Choose a password to get started:</p><p><a href="${url}">Set your password</a></p><p>This link works for ${INVITE_EXPIRY_HOURS} hours.</p>`,
+    });
+  }
+
+  async inviteMember(brandAccountId: string, brandId: string, input: { email: string; name: string }) {
+    const owner = await this.requireOwner(brandAccountId, brandId);
+    const email = input.email.trim().toLowerCase();
+    if (await this.prisma.brandAccount.findUnique({ where: { email } })) throw new ConflictException('That email already has a Threadflank brand account.');
+    const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
+    // The invitee never sees this: they set their own password from the emailed link.
+    const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
+    const member = await this.prisma.brandAccount.create({ data: { brandId, email, password, name: input.name.trim(), role: 'MANAGER' } });
+    await this.sendInvite(member, brand.name, owner.name);
+    return { id: member.id, name: member.name, email: member.email, role: member.role, isActive: member.isActive, pending: true, lastLoginAt: null };
+  }
+
+  async resendInvite(brandAccountId: string, brandId: string, memberId: string) {
+    const owner = await this.requireOwner(brandAccountId, brandId);
+    const member = await this.prisma.brandAccount.findFirst({ where: { id: memberId, brandId } });
+    if (!member) throw new NotFoundException('Team member not found.');
+    if (member.emailVerified) throw new BadRequestException('This person has already joined.');
+    const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
+    await this.sendInvite(member, brand.name, owner.name);
+  }
+
+  async setMemberActive(brandAccountId: string, brandId: string, memberId: string, isActive: boolean) {
+    await this.requireOwner(brandAccountId, brandId);
+    if (memberId === brandAccountId) throw new BadRequestException('You cannot disable your own account.');
+    const member = await this.prisma.brandAccount.findFirst({ where: { id: memberId, brandId } });
+    if (!member) throw new NotFoundException('Team member not found.');
+    if (member.role === 'OWNER') throw new ForbiddenException('The owner account cannot be disabled.');
+    await this.prisma.brandAccount.update({ where: { id: memberId }, data: { isActive } });
+    if (!isActive) await this.prisma.brandRefreshToken.updateMany({ where: { brandAccountId: memberId, revokedAt: null }, data: { revokedAt: new Date() } });
+    return { id: memberId, isActive };
   }
 }

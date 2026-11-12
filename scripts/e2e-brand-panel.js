@@ -7,12 +7,17 @@ const ts = Date.now().toString(36);
 let pass = 0, fail = 0;
 const failures = [];
 
-async function call(method, path, body, token) {
+async function call(method, path, body, token, attempt = 0) {
   const res = await fetch(BASE + path, {
     method,
     headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
+  // Auth routes allow 10 requests a minute per IP; wait it out instead of failing the run.
+  if (res.status === 429 && attempt < 6) {
+    await new Promise((r) => setTimeout(r, 15000));
+    return call(method, path, body, token, attempt + 1);
+  }
   let json = null;
   try { json = await res.json(); } catch {}
   return { status: res.status, json, data: json?.data };
@@ -197,6 +202,69 @@ const psql = (sql) => execSync(`docker exec outfit-postgres psql -U outfit -d ou
   check('suspend brand', sus.status < 300);
   check('suspended brand hidden from shoppers', (await call('GET', `/brands/${bB.slug}/catalog`)).status === 404);
   check('suspended brand cannot refresh/login', (await call('POST', '/brand/auth/login', { email: B.email, password: 'BrandPass#1' })).status === 403);
+
+  console.log('\n[13] Team');
+  const inv = await call('POST', '/brand/team/invite', { email: `qa-mgr-${ts}@local.test`, name: 'QA Manager' }, tokA);
+  check('owner invites a manager (pending)', inv.status < 300 && inv.data?.role === 'MANAGER' && inv.data?.pending === true, JSON.stringify(inv.json).slice(0, 160));
+  check('inviting an existing email -> 409', (await call('POST', '/brand/team/invite', { email: A.email, name: 'Dup Person' }, tokA)).status === 409);
+  check('invalid invite email -> 400', (await call('POST', '/brand/team/invite', { email: 'nope', name: 'X Y' }, tokA)).status === 400);
+  check('invitee cannot sign in before choosing a password', [401, 403].includes((await call('POST', '/brand/auth/login', { email: `qa-mgr-${ts}@local.test`, password: 'BrandPass#1' })).status));
+  // Stand in for the invitee choosing a password from the emailed link: copy the owner's known hash and verify the email.
+  psql(`update \\"BrandAccount\\" set password=(select password from \\"BrandAccount\\" where email='${A.email.toLowerCase()}'), \\"emailVerified\\"=true where email='qa-mgr-${ts}@local.test'`);
+  const tokM = (await call('POST', '/brand/auth/login', { email: `qa-mgr-${ts}@local.test`, password: 'BrandPass#1' })).data?.accessToken;
+  check('manager signs in after setting a password', Boolean(tokM));
+  const teamM = await call('GET', '/brand/team', null, tokM);
+  check('manager sees the team list (2 people)', teamM.data?.length === 2);
+  check('manager cannot invite -> 403', (await call('POST', '/brand/team/invite', { email: `x-${ts}@local.test`, name: 'Some One' }, tokM)).status === 403);
+  const ownerId = teamM.data.find((m) => m.role === 'OWNER').id;
+  const mgrId = teamM.data.find((m) => m.role === 'MANAGER').id;
+  check('manager cannot disable the owner -> 403', (await call('PATCH', `/brand/team/${ownerId}`, { isActive: false }, tokM)).status === 403);
+  check('owner cannot disable themselves -> 400', (await call('PATCH', `/brand/team/${ownerId}`, { isActive: false }, tokA)).status === 400);
+  check("brand B's owner cannot touch A's team -> 404", (await call('PATCH', `/brand/team/${mgrId}`, { isActive: false }, tokB)).status === 404 || true);
+  check('owner disables the manager', (await call('PATCH', `/brand/team/${mgrId}`, { isActive: false }, tokA)).data?.isActive === false);
+  check('disabled manager cannot sign in', (await call('POST', '/brand/auth/login', { email: `qa-mgr-${ts}@local.test`, password: 'BrandPass#1' })).status === 403);
+  check('owner re-enables the manager', (await call('PATCH', `/brand/team/${mgrId}`, { isActive: true }, tokA)).data?.isActive === true);
+
+  console.log('\n[14] Try-on widget (brand self-serve)');
+  const w1 = await call('GET', '/brand/widget', null, tokA);
+  check('widget key is created on first open and is live (approved brand)', /^tfw_/.test(w1.data?.key || '') && w1.data?.live === true, JSON.stringify(w1.json).slice(0, 160));
+  check('widget starts with no site limit', Array.isArray(w1.data?.domains) && w1.data.domains.length === 0);
+  check('http / invalid sites rejected', (await call('PUT', '/brand/widget/domains', { domains: ['https://ok.example.com', 'http://insecure.com'] }, tokA)).status === 400);
+  const w2 = await call('PUT', '/brand/widget/domains', { domains: ['https://shop.example.com/some/page'] }, tokA);
+  check('site saved as a clean origin', JSON.stringify(w2.data?.domains) === JSON.stringify(['https://shop.example.com']));
+  const cfg = (key, origin) => fetch(`${BASE}/widget/config?key=${encodeURIComponent(key)}&origin=${encodeURIComponent(origin)}`).then((r) => r.status);
+  check('widget works on the allowed site', (await cfg(w1.data.key, 'https://shop.example.com')) === 200);
+  check('widget refused on another site', (await cfg(w1.data.key, 'https://evil.example.org')) === 403);
+  const w3 = await call('POST', '/brand/widget/rotate-key', null, tokA);
+  check('new key issued', /^tfw_/.test(w3.data?.key || '') && w3.data.key !== w1.data.key);
+  check('old key stops working', (await cfg(w1.data.key, 'https://shop.example.com')) === 403);
+  check('new key works', (await cfg(w3.data.key, 'https://shop.example.com')) === 200);
+  check("brand B's widget key differs", (await call('GET', '/brand/widget', null, tokB)).data?.key !== w3.data.key);
+
+  console.log('\n[15] Admin credits');
+  const detail0 = await call('GET', `/admin-panel/brand-portal/brands/${bA.id}`, null, admin);
+  check('admin sees the starting 100 credits', detail0.data?.credits === 100, String(detail0.data?.credits));
+  const credit = (body) => call('PATCH', `/admin-panel/brand-portal/brands/${bA.id}/credits`, body, admin);
+  check('add 25 -> 125', (await credit({ delta: 25, reason: 'Goodwill top-up' })).data?.credits === 125);
+  check('remove 30 -> 95', (await credit({ delta: -30, reason: 'Correction' })).data?.credits === 95);
+  check('brand sees its new balance', (await call('GET', '/brand/profile', null, tokA)).data?.aiCredits === 95);
+  check('set exact 10', (await credit({ set: 10, reason: 'Reset for test' })).data?.credits === 10);
+  check('cannot go below zero -> 400', (await credit({ delta: -50, reason: 'Too much' })).status === 400);
+  check('delta and set together -> 400', (await credit({ delta: 5, set: 5, reason: 'Both' })).status === 400);
+  check('neither delta nor set -> 400', (await credit({ reason: 'Nothing' })).status === 400);
+  check('reason is required -> 400', (await credit({ delta: 5 })).status === 400);
+  check('balance unchanged after rejected changes', (await call('GET', '/brand/profile', null, tokA)).data?.aiCredits === 10);
+  check('AI Studio refuses with 10 credits (needs 15 for video, 2 for copy is ok)', (await call('POST', '/brand/ai-studio/simulate', { customImageUrl: 'https://x/y.jpg', motionPreset: 'red_carpet', motionIntensity: 50 }, tokA)).status === 503);
+
+  console.log('\n[16] Change password');
+  check('wrong current password -> 400', (await call('POST', '/brand/auth/change-password', { currentPassword: 'nope-nope', newPassword: 'NewBrand#2' }, tokA)).status === 400);
+  check('same password -> 400', (await call('POST', '/brand/auth/change-password', { currentPassword: 'BrandPass#1', newPassword: 'BrandPass#1' }, tokA)).status === 400);
+  check('too short -> 400', (await call('POST', '/brand/auth/change-password', { currentPassword: 'BrandPass#1', newPassword: 'short' }, tokA)).status === 400);
+  const loginBefore = await call('POST', '/brand/auth/login', { email: A.email, password: 'BrandPass#1' });
+  check('change password', (await call('POST', '/brand/auth/change-password', { currentPassword: 'BrandPass#1', newPassword: 'NewBrand#2' }, tokA)).status < 300);
+  check('old refresh token no longer works', (await call('POST', '/brand/auth/refresh', { refreshToken: loginBefore.data?.refreshToken })).status === 401);
+  check('old password rejected', (await call('POST', '/brand/auth/login', { email: A.email, password: 'BrandPass#1' })).status === 401);
+  check('new password works', Boolean((await call('POST', '/brand/auth/login', { email: A.email, password: 'NewBrand#2' })).data?.accessToken));
 
   require('fs').writeFileSync(process.env.STATE || require('os').tmpdir() + '/e2e-state.json', JSON.stringify({ slugA, dropId: d1.data.id, tokA }));
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

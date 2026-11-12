@@ -11,7 +11,8 @@ import { BrandCatalogService } from '../../Brand-panel/catalog/brand-catalog.ser
 import { BrandDropsService } from '../../Brand-panel/drops/brand-drops.service';
 import { BrandBiddingService } from '../../Brand-panel/bidding/brand-bidding.service';
 import { BrandAnalyticsService } from '../../Brand-panel/analytics/brand-analytics.service';
-import { BrandPortalFilterDto, VerificationAction, VerificationDecisionDto } from './brand-portal.dto';
+import { AdjustCreditsDto, BrandPortalFilterDto, VerificationAction, VerificationDecisionDto } from './brand-portal.dto';
+import { ConflictException } from '@nestjs/common';
 
 const ACCOUNT_SELECT = {
   id: true,
@@ -97,7 +98,8 @@ export class BrandPortalService {
   async detail(id: string, admin: AuthenticatedAdmin) {
     const brand = await this.getBrand(id, admin);
     const [catalogCount, dropsCount, bids, metrics] = await Promise.all([this.catalog.count(id), this.drops.count(id), this.bidding.findAll(id), this.analytics.getOverview(id)]);
-    return { brand, metrics, catalogCount, dropsCount, bidsCount: bids.filter((s) => s.yourCurrentBid !== undefined).length };
+    const credits = ((brand.socialLinks as Record<string, unknown> | null)?.aiCredits as number | undefined) ?? 0;
+    return { brand, metrics, credits, catalogCount, dropsCount, bidsCount: bids.filter((s) => s.yourCurrentBid !== undefined).length };
   }
 
   async catalogOf(id: string, admin: AuthenticatedAdmin) {
@@ -169,6 +171,21 @@ export class BrandPortalService {
     });
     this.notify(brand.accounts.map((a) => a.email), brand.name, dto.action, reason);
     return updated;
+  }
+
+  /** Staff top-up or correction of a brand's AI credits. Guarded like spending, so a render racing this can't lose or double credits. */
+  async adjustCredits(id: string, dto: AdjustCreditsDto, admin: AuthenticatedAdmin) {
+    if ((dto.delta === undefined) === (dto.set === undefined)) throw new BadRequestException('Send either "delta" or "set", not both.');
+    const brand = await this.getBrand(id, admin);
+    const social = (brand.socialLinks && typeof brand.socialLinks === 'object' ? brand.socialLinks : {}) as Record<string, unknown>;
+    const before = typeof social.aiCredits === 'number' ? social.aiCredits : 0;
+    const after = dto.set !== undefined ? dto.set : before + (dto.delta as number);
+    if (after < 0) throw new BadRequestException(`That would leave the brand with ${after} credits. The balance can't go below 0.`);
+    const fresh = await this.prisma.brand.findUniqueOrThrow({ where: { id } });
+    const { count } = await this.prisma.brand.updateMany({ where: { id, updatedAt: fresh.updatedAt }, data: { socialLinks: { ...social, aiCredits: after } } });
+    if (count === 0) throw new ConflictException('The balance changed while you were editing it. Reload and try again.');
+    await this.audit.log({ adminUserId: admin.adminUserId, action: 'BRAND_CREDITS_ADJUSTED', entityType: 'Brand', entityId: id, metadata: { before, after, reason: dto.reason.trim() } });
+    return { credits: after, before };
   }
 
   async setAccountActive(id: string, accountId: string, isActive: boolean, admin: AuthenticatedAdmin) {
