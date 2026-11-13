@@ -1231,6 +1231,8 @@ model BrandProduct {
   buyUrl        String
   featured      Boolean  @default(false)
   newDrop       Boolean  @default(false)
+  /// The brand's own grouping ("Wedding Edit 2026"). Free text; null = not in a collection.
+  collection    String?
   /// What a post used to hold: the caption, and whether it is live for shoppers.
   description   String?
   status        ContentStatus @default(PUBLISHED)
@@ -1248,6 +1250,8 @@ model BrandProduct {
   @@unique([brandId, sku])
   @@index([brandId, createdAt])
   @@index([brandId, status])
+  @@index([brandId, collection])
+  @@index([brandId, category])
   // Shopper-facing lists: a brand store (newest / price / featured) and the Discover feed.
   @@index([brandId, status, createdAt])
   @@index([brandId, status, price])

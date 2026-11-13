@@ -45,20 +45,8 @@ async function bootstrap() {
   const securityService = app.get(SecurityObservabilityService);
   const fastify = app.getHttpAdapter().getInstance();
 
-  // Enforcement gate: runs before routing, auth and body parsing, so banned IPs and
-  // floods (including 404 scanners the route-level throttler never sees) cost almost nothing.
-  fastify.addHook("onRequest", async (request: any, reply: any) => {
-    // Orchestrator health probes must never be blocked
-    if (request.raw?.url?.startsWith("/api/health") || request.raw?.url?.startsWith("/health")) return;
-    const verdict = securityService.checkRequest(getClientIp(request));
-    if (!verdict) return;
-    reply
-      .code(verdict.status)
-      .header("Retry-After", String(verdict.retryAfterSec))
-      .header("Cache-Control", "no-store")
-      .send(verdict.status === 429 ? { statusCode: 429, message: "Too many requests" } : { statusCode: 403, message: "Forbidden" });
-    return reply;
-  });
+  // IP blocking is intentionally off for now: bot/flood protection will sit in front of the API (Cloudflare).
+  // Browser access is limited by the CORS_ORIGINS allowlist below. The passive telemetry hook further down still logs threats.
 
   // Baseline security headers (the API has no use for framing, sniffing or referrers)
   fastify.addHook("onSend", async (request: any, reply: any, payload: any) => {
@@ -148,7 +136,7 @@ async function bootstrap() {
   // Enable CORS
   // Set CORS_ORIGINS="https://app.threadflank.com,https://admin.threadflank.com" to lock this
   // down. Unset keeps the previous allow-all behaviour so deploys don't break unannounced.
-  const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean);
   app.enableCors({
     origin: corsOrigins.length ? corsOrigins : "*",
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",

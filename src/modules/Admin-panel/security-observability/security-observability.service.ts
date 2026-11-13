@@ -17,7 +17,7 @@ const envInt = (name: string, fallback: number) => {
   const n = parseInt(process.env[name] ?? "", 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 };
-const ENFORCE = (process.env.SECURITY_ENFORCE ?? "true") !== "false";
+const ENFORCE = (process.env.SECURITY_ENFORCE ?? "false") !== "false";
 /** Hard ceiling for ANY request from one IP (matched or not), per minute. */
 const HARD_RATE_LIMIT_PER_MIN = envInt("SECURITY_HARD_RATE_LIMIT", 300);
 /** Strike points within STRIKE_WINDOW_MS that trigger an automatic ban. */

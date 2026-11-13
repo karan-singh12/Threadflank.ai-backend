@@ -1,7 +1,13 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 
 const toBool = ({ value }: { value: unknown }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : undefined);
+
+export const CATALOG_SORTS = ['newest', 'oldest', 'price_low', 'price_high', 'popular', 'stock_low'] as const;
+export type CatalogSort = (typeof CATALOG_SORTS)[number];
+
+/** Ceiling for one bulk action, so a single request cannot lock a huge slice of the table. */
+export const BULK_MAX = 500;
 
 /**
  * GET /brand/catalog (and the admin's view of a brand's catalog). With no paging parameters the list
@@ -12,7 +18,21 @@ export class CatalogPageQueryDto {
   @IsOptional() @IsString() @MaxLength(300) cursor?: string;
   @IsOptional() @IsString() @MaxLength(80) q?: string;
   @IsOptional() @IsString() @MaxLength(60) category?: string;
+  /** A brand collection by name. The word "none" lists the pieces that are in no collection. */
+  @IsOptional() @IsString() @MaxLength(80) collection?: string;
   @IsOptional() @IsIn(['PUBLISHED', 'DRAFT']) status?: 'PUBLISHED' | 'DRAFT';
   @IsOptional() @Transform(toBool) @IsBoolean() featured?: boolean;
   @IsOptional() @Transform(toBool) @IsBoolean() outOfStock?: boolean;
+  /** Pieces with 1–3 left. */
+  @IsOptional() @Transform(toBool) @IsBoolean() lowStock?: boolean;
+  /** Pieces with no image, so cannot be tried on. */
+  @IsOptional() @Transform(toBool) @IsBoolean() notReady?: boolean;
+  @IsOptional() @IsIn(CATALOG_SORTS as unknown as string[]) sort?: CatalogSort;
+}
+
+export class BulkCatalogDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(BULK_MAX) @IsString({ each: true }) ids!: string[];
+  @IsIn(['publish', 'draft', 'delete', 'collection']) action!: 'publish' | 'draft' | 'delete' | 'collection';
+  /** For action "collection": the target name, or an empty string to take the pieces out of their collection. */
+  @ValidateIf((o: BulkCatalogDto) => o.action === 'collection') @IsString() @MaxLength(80) collection?: string;
 }

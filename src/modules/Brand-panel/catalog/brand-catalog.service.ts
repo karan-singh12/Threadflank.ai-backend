@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateGarmentDto, UpdateGarmentDto } from '../dto/brand-common.dto';
 import { TaxonomyService } from '../taxonomy/taxonomy.service';
-import { CatalogPageQueryDto } from './catalog-page.dto';
+import { BULK_MAX, BulkCatalogDto, CatalogPageQueryDto, CatalogSort } from './catalog-page.dto';
 import { decodeCursor, encodeCursor, sliceByLimit } from '../../../common/pagination/cursor';
 
 export interface ProductItemEntity {
@@ -26,6 +26,8 @@ export interface ProductItemEntity {
   buyUrl: string;
   featured: boolean;
   newDrop: boolean;
+  /** The brand's own grouping, e.g. "Wedding Edit 2026". */
+  collection?: string;
   /** The caption: what a post used to say. */
   description?: string;
   /** DRAFT is hidden from shoppers; PUBLISHED is live. */
@@ -37,6 +39,19 @@ export interface ProductItemEntity {
 
 /** A brand's showcase is a short, curated list, so only this many pieces can be featured at once. */
 export const MAX_FEATURED = 8;
+
+/** Pieces with at most this many left count as "low stock". */
+export const LOW_STOCK_AT = 3;
+
+type SortSpec = { field: 'createdAt' | 'price' | 'drapesCount' | 'stock'; dir: 'asc' | 'desc' };
+const SORTS: Record<CatalogSort, SortSpec> = {
+  newest: { field: 'createdAt', dir: 'desc' },
+  oldest: { field: 'createdAt', dir: 'asc' },
+  price_low: { field: 'price', dir: 'asc' },
+  price_high: { field: 'price', dir: 'desc' },
+  popular: { field: 'drapesCount', dir: 'desc' },
+  stock_low: { field: 'stock', dir: 'asc' },
+};
 
 /** What the unpaged list returns at most, so one huge catalog cannot make a single response unbounded. */
 const LEGACY_LIST_CAP = 1000;
@@ -64,6 +79,7 @@ const toEntity = (r: Row): ProductItemEntity => ({
   buyUrl: r.buyUrl,
   featured: r.featured,
   newDrop: r.newDrop,
+  collection: r.collection ?? undefined,
   description: r.description ?? undefined,
   status: r.status,
   sharesCount: r.sharesCount,
@@ -131,30 +147,99 @@ export class BrandCatalogService {
     return rows.map(toEntity);
   }
 
-  /** One page of the catalog, newest first, reached by cursor. The totals ride along on the first page only. */
+  private whereFor(brandId: string, q: CatalogPageQueryDto): Prisma.BrandProductWhereInput {
+    const and: Prisma.BrandProductWhereInput[] = [{ brandId }];
+    const term = q.q?.trim();
+    if (term) and.push({ OR: [{ title: { contains: term, mode: 'insensitive' } }, { sku: { contains: term, mode: 'insensitive' } }, { collection: { contains: term, mode: 'insensitive' } }] });
+    if (q.category?.trim()) and.push({ category: { equals: q.category.trim(), mode: 'insensitive' } });
+    const col = q.collection?.trim();
+    if (col) and.push(col.toLowerCase() === 'none' ? { collection: null } : { collection: { equals: col, mode: 'insensitive' } });
+    if (q.status) and.push({ status: q.status });
+    if (q.featured !== undefined) and.push({ featured: q.featured });
+    if (q.outOfStock) and.push({ stock: { lte: 0 } });
+    if (q.lowStock) and.push({ stock: { gt: 0, lte: LOW_STOCK_AT } });
+    if (q.notReady) and.push({ isDrapeReady: false });
+    return { AND: and };
+  }
+
+  /**
+   * One page of the catalog reached by cursor, in the chosen sort. The cursor carries the last row's sort
+   * value plus its id, so every page is one indexed seek however deep it is. The total rides on page one only.
+   */
   async findPage(brandId: string, q: CatalogPageQueryDto) {
     const limit = q.limit ?? 24;
-    const where: Prisma.BrandProductWhereInput = { brandId };
-    const term = q.q?.trim();
-    if (term) where.OR = [{ title: { contains: term, mode: 'insensitive' } }, { sku: { contains: term, mode: 'insensitive' } }];
-    if (q.category?.trim()) where.category = { equals: q.category.trim(), mode: 'insensitive' };
-    if (q.status) where.status = q.status;
-    if (q.featured !== undefined) where.featured = q.featured;
-    if (q.outOfStock) where.stock = { lte: 0 };
+    const { field, dir } = SORTS[q.sort ?? 'newest'];
+    const where = this.whereFor(brandId, q);
 
     let page: Prisma.BrandProductWhereInput = where;
     if (q.cursor) {
-      const cur = decodeCursor<{ id: string; c: string }>(q.cursor);
-      const when = new Date(cur.c);
-      page = { AND: [where, { OR: [{ createdAt: { lt: when } }, { createdAt: when, id: { lt: cur.id } }] }] };
+      const cur = decodeCursor<{ id: string; v: string | number }>(q.cursor);
+      const v = field === 'createdAt' ? new Date(cur.v) : Number(cur.v);
+      const bad = v instanceof Date ? Number.isNaN(v.getTime()) : Number.isNaN(v);
+      if (bad) throw new BadRequestException('That page link is not valid. Reload the list.');
+      const past = dir === 'desc' ? 'lt' : 'gt';
+      page = { AND: [where, { OR: [{ [field]: { [past]: v } }, { [field]: v, id: { [past]: cur.id } }] }] };
     }
     const [rows, total] = await Promise.all([
-      this.prisma.brandProduct.findMany({ where: page, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1, include: WITH_COUNTS }),
+      this.prisma.brandProduct.findMany({ where: page, orderBy: [{ [field]: dir }, { id: dir }], take: limit + 1, include: WITH_COUNTS }),
       q.cursor ? Promise.resolve(null) : this.prisma.brandProduct.count({ where }),
     ]);
     const { page: items, more } = sliceByLimit(rows, limit);
     const last = items[items.length - 1];
-    return { items: items.map(toEntity), nextCursor: more && last ? encodeCursor({ id: last.id, c: last.createdAt.toISOString() }) : null, total };
+    const v = last ? (field === 'createdAt' ? last.createdAt.toISOString() : (last[field] as number)) : null;
+    return { items: items.map(toEntity), nextCursor: more && last ? encodeCursor({ id: last.id, v }) : null, total };
+  }
+
+  /** The numbers the filter bar needs, from a few grouped counts instead of loading the catalog. */
+  async facets(brandId: string) {
+    const [categories, collections, statuses, outOfStock, lowStock, notReady, featured, total] = await Promise.all([
+      this.prisma.brandProduct.groupBy({ by: ['category'], where: { brandId }, _count: { _all: true }, orderBy: { _count: { category: 'desc' } } }),
+      this.prisma.brandProduct.groupBy({ by: ['collection'], where: { brandId }, _count: { _all: true } }),
+      this.prisma.brandProduct.groupBy({ by: ['status'], where: { brandId }, _count: { _all: true } }),
+      this.prisma.brandProduct.count({ where: { brandId, stock: { lte: 0 } } }),
+      this.prisma.brandProduct.count({ where: { brandId, stock: { gt: 0, lte: LOW_STOCK_AT } } }),
+      this.prisma.brandProduct.count({ where: { brandId, isDrapeReady: false } }),
+      this.prisma.brandProduct.count({ where: { brandId, featured: true } }),
+      this.prisma.brandProduct.count({ where: { brandId } }),
+    ]);
+    const named = collections
+      .filter((c) => c.collection)
+      .map((c) => ({ name: c.collection as string, count: c._count._all }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    return {
+      total,
+      categories: categories.map((c) => ({ name: c.category, count: c._count._all })),
+      collections: named,
+      uncollected: collections.find((c) => !c.collection)?._count._all ?? 0,
+      status: {
+        published: statuses.find((x) => x.status === 'PUBLISHED')?._count._all ?? 0,
+        draft: statuses.find((x) => x.status === 'DRAFT')?._count._all ?? 0,
+      },
+      outOfStock,
+      lowStock,
+      notReady,
+      featured,
+    };
+  }
+
+  /** One action on up to BULK_MAX pieces. Scoped by brandId, so foreign ids are simply not touched. */
+  async bulk(brandId: string, dto: BulkCatalogDto) {
+    const ids = [...new Set(dto.ids)].slice(0, BULK_MAX);
+    const where = { id: { in: ids }, brandId };
+    let count = 0;
+    if (dto.action === 'delete') {
+      count = (await this.prisma.brandProduct.deleteMany({ where })).count;
+    } else if (dto.action === 'collection') {
+      count = (await this.prisma.brandProduct.updateMany({ where, data: { collection: dto.collection?.trim() || null } })).count;
+    } else if (dto.action === 'draft') {
+      count = (await this.prisma.brandProduct.updateMany({ where, data: { status: 'DRAFT', featured: false } })).count;
+    } else {
+      // publishedAt is only stamped the first time a piece goes live.
+      await this.prisma.brandProduct.updateMany({ where: { ...where, publishedAt: null }, data: { publishedAt: new Date() } });
+      count = (await this.prisma.brandProduct.updateMany({ where, data: { status: 'PUBLISHED' } })).count;
+    }
+    this.taxonomy.invalidatePublic();
+    return { action: dto.action, requested: ids.length, affected: count };
   }
 
   count(brandId: string) {
@@ -195,6 +280,7 @@ export class BrandCatalogService {
           buyUrl: dto.buyUrl,
           featured: dto.featured ?? false,
           newDrop: dto.newDrop ?? true,
+          collection: dto.collection?.trim() || null,
           description: dto.description?.trim() || null,
           status: dto.status ?? "PUBLISHED",
           publishedAt: (dto.status ?? "PUBLISHED") === "PUBLISHED" ? new Date() : null,
@@ -216,6 +302,7 @@ export class BrandCatalogService {
     if (dto.featured && !current.featured) await this.assertFeaturedRoom(brandId);
     const data = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined)) as Prisma.BrandProductUpdateInput;
     if (dto.description !== undefined) data.description = dto.description.trim() || null;
+    if (dto.collection !== undefined) data.collection = dto.collection.trim() || null;
     if (dto.category !== undefined) data.category = await this.taxonomy.requireCategory(dto.category);
     if (dto.occasions !== undefined) data.occasions = await this.taxonomy.requireOccasions(dto.occasions);
     // Going live for the first time stamps the publish date.

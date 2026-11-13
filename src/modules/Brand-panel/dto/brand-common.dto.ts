@@ -201,6 +201,12 @@ export class CreateGarmentDto {
   @IsOptional()
   newDrop?: boolean;
 
+  @ApiPropertyOptional({ example: 'Wedding Edit 2026' })
+  @IsString()
+  @MaxLength(80)
+  @IsOptional()
+  collection?: string;
+
   @ApiPropertyOptional({ example: 'Hand-woven silk with zari border, made for festive evenings.' })
   @IsString()
   @MaxLength(2000)
@@ -293,6 +299,12 @@ export class UpdateGarmentDto {
   @IsBoolean()
   @IsOptional()
   newDrop?: boolean;
+
+  @ApiPropertyOptional({ description: 'Empty string removes the piece from its collection' })
+  @IsString()
+  @MaxLength(80)
+  @IsOptional()
+  collection?: string;
 
   @ApiPropertyOptional()
   @IsString()
