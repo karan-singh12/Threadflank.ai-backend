@@ -1,4 +1,4 @@
-export const CONTENT_TYPES = ['product_description', 'instagram_caption', 'launch_announcement', 'email_blurb', 'seo_meta'] as const;
+export const CONTENT_TYPES = ['product_description', 'instagram_caption', 'launch_announcement', 'email_blurb', 'seo_meta', 'whatsapp_broadcast', 'product_title'] as const;
 export type BrandContentType = (typeof CONTENT_TYPES)[number];
 
 export const CONTENT_TONES = ['luxe', 'playful', 'minimal', 'festive', 'bold'] as const;
@@ -42,6 +42,18 @@ export const CONTENT_SPECS: Record<BrandContentType, { label: string; maxChars: 
     maxChars: 800,
     brief: (len) =>
       `A promotional email: first line is the subject (prefix it with "Subject: "), then a blank line, then the body of ${len === 'short' ? '2 sentences' : len === 'long' ? '2 short paragraphs' : '1 short paragraph'} and a one-line call to action.`,
+  },
+  whatsapp_broadcast: {
+    label: 'WhatsApp broadcast',
+    maxChars: 600,
+    brief: (len) =>
+      `A WhatsApp broadcast message to existing customers. ${len === 'short' ? '2 short lines' : len === 'long' ? '4-5 short lines' : '3 short lines'}. Conversational, personal, with one clear call to action and at most 2 emoji. No hashtags.`,
+  },
+  product_title: {
+    label: 'Product title',
+    maxChars: 120,
+    brief: () =>
+      'A single product title of at most 70 characters, on one line: the garment type, its standout detail and colour or fabric if known. No quotes, no brand name, no emoji.',
   },
   seo_meta: {
     label: 'SEO title and meta description',

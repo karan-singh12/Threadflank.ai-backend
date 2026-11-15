@@ -18,6 +18,9 @@ import { BrandDropsController } from './drops/brand-drops.controller';
 import { BrandUploadController } from './upload/brand-upload.controller';
 import { BrandTeamController } from './team/brand-team.controller';
 import { BrandWidgetController } from './widget/brand-widget.controller';
+import { BrandBillingController, BrandCouponsAdminController } from './billing/brand-billing.controller';
+import { BrandBillingService } from './billing/brand-billing.service';
+import { AdminAuthModule } from '../Admin-panel/admin-auth/admin-auth.module';
 import { BrandTaxonomyController } from './taxonomy/brand-taxonomy.controller';
 import { TaxonomyService } from './taxonomy/taxonomy.service';
 
@@ -41,6 +44,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     UploadsModule,
     MailerModule,
     SdkModule,
+    AdminAuthModule,
     // No default secret: BrandJwtStrategy always passes its own, so brand tokens never share the user secret.
     JwtModule.register({}),
   ],
@@ -56,6 +60,8 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandTeamController,
     BrandWidgetController,
     BrandTaxonomyController,
+    BrandBillingController,
+    BrandCouponsAdminController,
   ],
   providers: [
     AppLogger,
@@ -71,6 +77,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandUploadService,
     BrandWidgetService,
     TaxonomyService,
+    BrandBillingService,
   ],
   exports: [
     BrandAuthService,

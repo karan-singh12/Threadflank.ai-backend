@@ -43,6 +43,12 @@ export class OutfitPieceDto {
     @MaxLength(60)
     label?: string;
 
+    /** Set when this piece is a brand's catalog piece, so the brand sees the try-on. */
+    @IsString()
+    @IsOptional()
+    @MaxLength(40)
+    brandProductId?: string;
+
     /** Ethnic garment kind (saree, lehenga, sherwani…) for drape-aware rendering. */
     @IsString()
     @IsOptional()

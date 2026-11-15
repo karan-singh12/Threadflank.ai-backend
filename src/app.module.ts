@@ -46,6 +46,7 @@ import { AdminOpsModule } from "./modules/Admin-panel/admin-ops/admin-ops.module
 import { WidgetModule } from "./modules/Admin-panel/widget/widget.module";
 import { SecurityObservabilityModule } from "./modules/Admin-panel/security-observability/security-observability.module";
 import { BrandPanelModule } from "./modules/Brand-panel/brand-panel.module";
+import { BrandEventsModule } from "./shared/brand-events/brand-events.module";
 
 
 
@@ -150,6 +151,7 @@ import { BrandPanelModule } from "./modules/Brand-panel/brand-panel.module";
     WidgetModule,
     SecurityObservabilityModule,
     BrandPanelModule,
+    BrandEventsModule,
   ],
   controllers: [AppController],
   providers: [

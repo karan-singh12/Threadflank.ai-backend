@@ -29,7 +29,7 @@ function fakePrisma() {
             },
             update: async ({ where, data }: any) => {
                 const u = users.get(where.id)!;
-                u.creditBalance += data.creditBalance.increment;
+                if (data.creditBalance) u.creditBalance += data.creditBalance.increment;
                 return u;
             },
         },

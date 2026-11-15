@@ -4,6 +4,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogService } from '../../../shared/audit/audit-log.service';
 import { buildPaginationMeta } from '../../../common/dto/pagination-query.dto';
 import { CreditsService } from './credits.service';
+import { markBrandPaymentPaid } from '../../Brand-panel/billing/brand-credits';
 import { checkoutSignatureValid, createRazorpayOrder, razorpayConfig, webhookSignatureValid } from './razorpay';
 import { AdjustCreditsDto, CreditPackDto, PaymentsFilterDto, UpdateBillingSettingsDto, VerifyPaymentDto } from './dto/billing.dto';
 
@@ -108,13 +109,27 @@ export class PaymentsService {
 
         if (event.event === 'payment.captured' || event.event === 'order.paid') {
             const known = await this.prisma.payment.findUnique({ where: { providerOrderId: orderId } });
-            if (!known) return { received: true }; // not one of our orders
+            if (!known) {
+                // Not a shopper order: it may be a brand buying credits.
+                const brandOrder = await this.prisma.brandPayment.findUnique({ where: { providerOrderId: orderId } });
+                if (!brandOrder) return { received: true };
+                if (payment?.amount && payment.amount !== brandOrder.amount) {
+                    this.logger.error(`Amount mismatch on brand order ${orderId}: paid ${payment.amount}, expected ${brandOrder.amount}`);
+                    return { received: true };
+                }
+                await markBrandPaymentPaid(this.prisma, orderId, payment?.id ?? null);
+                return { received: true };
+            }
             if (payment?.amount && payment.amount !== known.amount) {
                 this.logger.error(`Amount mismatch on ${orderId}: paid ${payment.amount}, expected ${known.amount}`);
                 return { received: true };
             }
             await this.markPaid(orderId, payment?.id ?? null);
         } else if (event.event === 'payment.failed') {
+            await this.prisma.brandPayment.updateMany({
+                where: { providerOrderId: orderId, status: PaymentStatus.CREATED },
+                data: { status: PaymentStatus.FAILED, failureReason: payment?.error_description ?? 'Payment failed', providerPaymentId: payment?.id ?? undefined },
+            });
             await this.prisma.payment.updateMany({
                 where: { providerOrderId: orderId, status: PaymentStatus.CREATED },
                 data: { status: PaymentStatus.FAILED, failureReason: payment?.error_description ?? 'Payment failed', providerPaymentId: payment?.id ?? undefined },

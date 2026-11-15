@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { isValidGstin, normaliseGstin } from '../billing/gstin';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UpdateBrandProfileDto } from '../dto/brand-common.dto';
@@ -26,6 +27,13 @@ export class BrandProfileService {
       throw new BadRequestException('Add your flagship store address, or switch the store type to Online only.');
     }
 
+    let gstin: string | null | undefined;
+    if (dto.gstin !== undefined) {
+      const g = normaliseGstin(dto.gstin);
+      if (g && !isValidGstin(g)) throw new BadRequestException('That GST number does not look right. It has 15 characters, like 27AAPFU0939F1ZV.');
+      gstin = g || null;
+    }
+
     const updatedSocial = {
       ...social,
       ...(dto.themeAccent !== undefined ? { themeAccent: dto.themeAccent } : {}),
@@ -42,6 +50,7 @@ export class BrandProfileService {
         ...(dto.story !== undefined ? { description: dto.story } : {}),
         ...(dto.logo !== undefined ? { logoUrl: dto.logo } : {}),
         ...(dto.websiteUrl !== undefined ? { websiteUrl: dto.websiteUrl } : {}),
+        ...(gstin !== undefined ? { gstin } : {}),
         socialLinks: updatedSocial as Prisma.InputJsonValue,
       },
     });

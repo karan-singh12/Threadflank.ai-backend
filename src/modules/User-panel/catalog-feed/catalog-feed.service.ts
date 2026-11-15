@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BrandEventsService } from '../../../shared/brand-events/brand-events.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { APP_CONSTANTS } from '../../../common/constants/app.constant';
@@ -76,7 +77,10 @@ type FeedRow = Prisma.BrandProductGetPayload<{ include: typeof FEED_INCLUDE }>;
  */
 @Injectable()
 export class CatalogFeedService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly events?: BrandEventsService,
+  ) {}
 
   private shape(p: FeedRow, extra: { likedByMe: boolean; savedByMe: boolean; latestComments: unknown[] }) {
     const { comments: _c, _count, ...rest } = p;
@@ -156,19 +160,20 @@ export class CatalogFeedService {
   }
 
   /** One live piece; an id from an old post link still resolves to the piece that replaced the post. */
-  async findOnePublic(id: string, userId?: string) {
+  async findOnePublic(id: string, userId?: string, actor?: string) {
     const row =
       (await this.prisma.brandProduct.findFirst({ where: { id, ...LIVE }, include: FEED_INCLUDE })) ??
       (await this.prisma.brandProduct.findFirst({ where: { sourcePostId: id, ...LIVE }, include: FEED_INCLUDE }));
     if (!row) throw new NotFoundException('Post not found');
     const eng = await this.engagement([row], userId);
+    this.events?.record({ brandId: row.brandId, type: 'PRODUCT_VIEW', productId: row.id, userId, actor: userId ?? actor });
     return this.shape(row, eng(row));
   }
 
   private async findLive(id: string) {
     const row =
-      (await this.prisma.brandProduct.findFirst({ where: { id, ...LIVE }, select: { id: true, title: true, description: true, images: true, category: true, brand: { select: { name: true } } } })) ??
-      (await this.prisma.brandProduct.findFirst({ where: { sourcePostId: id, ...LIVE }, select: { id: true, title: true, description: true, images: true, category: true, brand: { select: { name: true } } } }));
+      (await this.prisma.brandProduct.findFirst({ where: { id, ...LIVE }, select: { id: true, brandId: true, title: true, description: true, images: true, category: true, brand: { select: { name: true } } } })) ??
+      (await this.prisma.brandProduct.findFirst({ where: { sourcePostId: id, ...LIVE }, select: { id: true, brandId: true, title: true, description: true, images: true, category: true, brand: { select: { name: true } } } }));
     if (!row) throw new NotFoundException('Post not found');
     return row;
   }
@@ -186,8 +191,9 @@ export class CatalogFeedService {
   }
 
   async recordShare(id: string) {
-    const { id: productId } = await this.findLive(id);
-    const row = await this.prisma.brandProduct.update({ where: { id: productId }, data: { sharesCount: { increment: 1 } }, select: { sharesCount: true } });
+    const live = await this.findLive(id);
+    const row = await this.prisma.brandProduct.update({ where: { id: live.id }, data: { sharesCount: { increment: 1 } }, select: { sharesCount: true } });
+    this.events?.record({ brandId: live.brandId, type: 'SHARE', productId: live.id });
     return { sharesCount: row.sharesCount };
   }
 
@@ -205,6 +211,7 @@ export class CatalogFeedService {
     const look = await this.prisma.look.create({
       data: { userId, name: `${p.brand.name}: ${title}`.slice(0, 80), occasion: occasionFor(p.category), image, pieces: [p.title || p.category || p.brand.name] },
     });
+    this.events?.record({ brandId: p.brandId, type: 'SAVE', productId: p.id, userId });
     return { saved: true, lookId: look.id };
   }
 

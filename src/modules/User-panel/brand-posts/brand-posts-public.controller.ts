@@ -7,6 +7,7 @@ import { AddBrandPostCommentDto } from '../../Admin-panel/brand-posts/dto/add-co
 import { AuthGuard } from '../../../common/guards/auth.guard';
 import { OptionalAuthGuard } from '../../../common/guards/optional-auth.guard';
 import { MESSAGES } from '../../../common/constants/messages.constant';
+import { getClientIp } from '../../../common/utils/client-ip.util';
 
 /**
  * App-facing Discover/Trending feed and engagement. The route stays /brand-posts so the app keeps working,
@@ -31,7 +32,7 @@ export class BrandPostsPublicController {
   @UseGuards(OptionalAuthGuard)
   @ApiOperation({ summary: 'Get a single published brand post (public post page, share links)' })
   async findOne(@Param('id') id: string, @Req() req: any) {
-    const post = await this.brandPostsService.findOnePublic(id, req.user?.userId);
+    const post = await this.brandPostsService.findOnePublic(id, req.user?.userId, getClientIp(req));
     return { message: MESSAGES.brandPosts.fetched, data: post };
   }
 
