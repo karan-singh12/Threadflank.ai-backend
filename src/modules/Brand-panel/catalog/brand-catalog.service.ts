@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateGarmentDto, UpdateGarmentDto } from '../dto/brand-common.dto';
 import { TaxonomyService } from '../taxonomy/taxonomy.service';
-import { BULK_MAX, BulkCatalogDto, CatalogPageQueryDto, CatalogSort } from './catalog-page.dto';
+import { BULK_MAX, BulkCatalogDto, CatalogPageQueryDto, CatalogSort, ImportCatalogDto } from './catalog-page.dto';
+import { normalizeImportRow, NormalizedRow } from './catalog-import';
 import { decodeCursor, encodeCursor, sliceByLimit } from '../../../common/pagination/cursor';
 
 export interface ProductItemEntity {
@@ -229,6 +230,9 @@ export class BrandCatalogService {
     let count = 0;
     if (dto.action === 'delete') {
       count = (await this.prisma.brandProduct.deleteMany({ where })).count;
+    } else if (dto.action === 'category') {
+      const category = await this.taxonomy.requireCategory(dto.category ?? '');
+      count = (await this.prisma.brandProduct.updateMany({ where, data: { category } })).count;
     } else if (dto.action === 'collection') {
       count = (await this.prisma.brandProduct.updateMany({ where, data: { collection: dto.collection?.trim() || null } })).count;
     } else if (dto.action === 'draft') {
@@ -240,6 +244,98 @@ export class BrandCatalogService {
     }
     this.taxonomy.invalidatePublic();
     return { action: dto.action, requested: ids.length, affected: count };
+  }
+
+  /**
+   * Bulk import: up to BULK_MAX rows. Every row is checked on its own, so good rows go in and bad rows come
+   * back with a reason. A SKU that already exists is skipped, or updated when updateExisting is set.
+   */
+  async importItems(brandId: string, dto: ImportCatalogDto) {
+    const resolver = await this.taxonomy.resolver();
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { websiteUrl: true } });
+    const fallbackBuyUrl = brand?.websiteUrl?.trim() ?? '';
+
+    const errors: { row: number; sku?: string; message: string }[] = [];
+    const rows: { row: number; data: NormalizedRow }[] = [];
+    const seen = new Map<string, number>();
+    dto.items.forEach((raw, i) => {
+      const row = i + 1;
+      try {
+        const data = normalizeImportRow(raw, resolver);
+        const key = data.sku.toLowerCase();
+        const first = seen.get(key);
+        if (first !== undefined) throw new Error(`SKU "${data.sku}" is already used in row ${first}.`);
+        seen.set(key, row);
+        rows.push({ row, data });
+      } catch (e) {
+        const sku = raw && typeof raw === 'object' ? String((raw as Record<string, unknown>).sku ?? '').trim() || undefined : undefined;
+        errors.push({ row, sku, message: e instanceof Error ? e.message : 'This row could not be read.' });
+      }
+    });
+
+    const existing = rows.length
+      ? await this.prisma.brandProduct.findMany({ where: { brandId, sku: { in: rows.map((r) => r.data.sku) } }, select: { id: true, sku: true, publishedAt: true } })
+      : [];
+    const bySku = new Map(existing.map((e) => [e.sku.toLowerCase(), e]));
+
+    const fresh: Prisma.BrandProductCreateManyInput[] = [];
+    const updates: Prisma.PrismaPromise<unknown>[] = [];
+    let skipped = 0;
+    const now = new Date();
+    for (const { data } of rows) {
+      const found = bySku.get(data.sku.toLowerCase());
+      if (found) {
+        if (!dto.updateExisting) {
+          skipped++;
+          continue;
+        }
+        const { sku: _sku, status, images, ...rest } = data;
+        void _sku;
+        const patch: Prisma.BrandProductUpdateInput = { ...rest };
+        if (images) {
+          patch.images = images;
+          patch.isDrapeReady = images.length > 0;
+        }
+        if (status) {
+          patch.status = status;
+          if (status === 'PUBLISHED' && !found.publishedAt) patch.publishedAt = now;
+        }
+        updates.push(this.prisma.brandProduct.update({ where: { id: found.id }, data: patch }));
+        continue;
+      }
+      const status = data.status ?? 'PUBLISHED';
+      fresh.push({
+        brandId,
+        title: data.title,
+        sku: data.sku,
+        price: data.price,
+        originalPrice: data.originalPrice,
+        images: data.images ?? [],
+        category: data.category,
+        occasions: data.occasions ?? [],
+        colors: data.colors ?? [],
+        sizes: data.sizes ?? [],
+        stock: data.stock ?? 0,
+        isDrapeReady: (data.images?.length ?? 0) > 0,
+        buyUrl: data.buyUrl ?? fallbackBuyUrl,
+        newDrop: false,
+        collection: data.collection ?? null,
+        description: data.description ?? null,
+        status,
+        publishedAt: status === 'PUBLISHED' ? now : null,
+      });
+    }
+
+    let created = 0;
+    for (let i = 0; i < fresh.length; i += 250) {
+      created += (await this.prisma.brandProduct.createMany({ data: fresh.slice(i, i + 250), skipDuplicates: true })).count;
+    }
+    for (let i = 0; i < updates.length; i += 50) await this.prisma.$transaction(updates.slice(i, i + 50));
+    // A row lost to a race on the unique SKU counts as skipped rather than silently vanishing.
+    skipped += fresh.length - created;
+
+    if (created || updates.length) this.taxonomy.invalidatePublic();
+    return { received: dto.items.length, created, updated: updates.length, skipped, failed: errors.length, errors: errors.slice(0, 200) };
   }
 
   count(brandId: string) {

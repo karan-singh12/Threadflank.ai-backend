@@ -30,9 +30,18 @@ export class CatalogPageQueryDto {
   @IsOptional() @IsIn(CATALOG_SORTS as unknown as string[]) sort?: CatalogSort;
 }
 
+/** Rows are validated one by one in the service so a single bad row never rejects the whole file. */
+export class ImportCatalogDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(BULK_MAX) items!: Record<string, unknown>[];
+  /** When true, a row whose SKU already exists updates that piece instead of being skipped. */
+  @IsOptional() @IsBoolean() updateExisting?: boolean;
+}
+
 export class BulkCatalogDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(BULK_MAX) @IsString({ each: true }) ids!: string[];
-  @IsIn(['publish', 'draft', 'delete', 'collection']) action!: 'publish' | 'draft' | 'delete' | 'collection';
+  @IsIn(['publish', 'draft', 'delete', 'collection', 'category']) action!: 'publish' | 'draft' | 'delete' | 'collection' | 'category';
   /** For action "collection": the target name, or an empty string to take the pieces out of their collection. */
   @ValidateIf((o: BulkCatalogDto) => o.action === 'collection') @IsString() @MaxLength(80) collection?: string;
+  /** For action "category": must be one of the admin-managed categories. */
+  @ValidateIf((o: BulkCatalogDto) => o.action === 'category') @IsString() @MaxLength(60) category?: string;
 }

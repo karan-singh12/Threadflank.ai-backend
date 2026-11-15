@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma, TaxonomyKind } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TtlCache } from '../../../common/cache/ttl-cache';
+import type { ImportResolver } from '../catalog/catalog-import';
 
 export const slugOf = (v: string) => v.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const clean = (v: string) => v.replace(/\s+/g, ' ').trim();
@@ -32,6 +33,33 @@ export class TaxonomyService {
     if (rows.length === 0) return { name: null, listEmpty: true };
     const hit = rows.find((r) => r.slug === slugOf(value));
     return { name: hit?.name ?? null, listEmpty: false };
+  }
+
+  /**
+   * Both lists read once, so a bulk import checks hundreds of rows without a query each.
+   * Before any entries exist (fresh install) every value is accepted, as requireCategory does.
+   */
+  async resolver(): Promise<ImportResolver> {
+    const [cats, occs] = await Promise.all([this.list('CATEGORY'), this.list('OCCASION')]);
+    const catBySlug = new Map(cats.map((c) => [c.slug, c.name]));
+    const occBySlug = new Map(occs.map((o) => [o.slug, o.name]));
+    return {
+      category: (value) => {
+        if (cats.length === 0) return clean(value);
+        const hit = catBySlug.get(slugOf(value));
+        if (!hit) throw new Error(`Category "${clean(value)}" is not one of: ${cats.map((c) => c.name).join(', ')}.`);
+        return hit;
+      },
+      occasions: (values) => {
+        const out: string[] = [];
+        for (const v of values) {
+          const name = occs.length === 0 ? clean(v) : occBySlug.get(slugOf(v));
+          if (!name) throw new Error(`Occasion "${clean(v)}" is not one of: ${occs.map((o) => o.name).join(', ')}.`);
+          if (!out.includes(name)) out.push(name);
+        }
+        return out;
+      },
+    };
   }
 
   /** A piece's category must be one of the active categories. Before any exist (fresh install) anything is accepted. */

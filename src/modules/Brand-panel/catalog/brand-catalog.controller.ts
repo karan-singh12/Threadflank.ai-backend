@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BrandCatalogService } from './brand-catalog.service';
-import { BulkCatalogDto, CatalogPageQueryDto } from './catalog-page.dto';
+import { BulkCatalogDto, CatalogPageQueryDto, ImportCatalogDto } from './catalog-page.dto';
 import { CreateGarmentDto, UpdateGarmentDto } from '../dto/brand-common.dto';
 import { BrandAuthGuard, CurrentBrand } from '../auth/brand-auth.guard';
 import { AuthenticatedBrand } from '../auth/brand-jwt.strategy';
@@ -27,6 +27,12 @@ export class BrandCatalogController {
   @ApiOperation({ summary: 'Counts for the filter bar: categories, collections, status, stock' })
   async facets(@CurrentBrand() brand: AuthenticatedBrand) {
     return { message: 'Catalog facets fetched successfully', data: await this.catalogService.facets(brand.brandId) };
+  }
+
+  @Post('import')
+  @ApiOperation({ summary: 'Import up to 500 garments at once (CSV rows). Reports each bad row instead of failing the file' })
+  async import(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: ImportCatalogDto) {
+    return { message: 'Import finished', data: await this.catalogService.importItems(brand.brandId, dto) };
   }
 
   @Post('bulk')
