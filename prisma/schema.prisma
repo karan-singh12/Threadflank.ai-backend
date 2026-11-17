@@ -780,8 +780,9 @@ model TwinProfile {
   weightKg      Int?
   skinTone      String?
   hairColor     String?
-  selfieUrl     String?
-  baseAvatarUrl String?
+  selfieUrl     String? // The uploaded selfie
+  avatarUrl     String? // Generated clean portrait
+  baseAvatarUrl String? // Generated full-body twin Drape dresses
   backgroundId  String? // Preferred StudioBackground (scene) id
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -1222,7 +1223,7 @@ model CreditTransaction {
   /// Positive for grants and refunds, negative for spending.
   delta        Int
   balanceAfter Int
-  /// FREE | PURCHASE | DRAPE | LOOK_EDIT | VIDEO | REFUND | ADMIN
+  /// FREE | PURCHASE | DRAPE | LOOK_EDIT | TWIN | VIDEO | REFUND | ADMIN
   reason       String
   refId        String?
   note         String?

@@ -63,6 +63,17 @@ describe('drape prompt builder', () => {
         expect(job.prompt).toContain('white churidar');
     });
 
+    it('treats a generated body twin as a full-body reference, not a selfie', () => {
+        const outfit = [{ slot: GarmentSlot.TOP, image: 'top.png' }];
+        const single = buildPersonPrompt(person({ bodyTwin: true, outfit }));
+        expect(single.prompt).toContain('Image 1 is the saved full-body twin of Karan');
+        expect(single.prompt).not.toContain('is a selfie');
+
+        const group = buildOnePassGroupPrompt({ people: [person({ bodyTwin: true, outfit }), person({ ref: 'a', name: 'Priya', relation: 'Partner' })] } as GroupDrapeDto);
+        expect(group.prompt).toContain('Image 1 is their saved full-body twin');
+        expect(group.prompt).toContain('Image 3 is their selfie');
+    });
+
     it('renders a plain backdrop for a group member, and places a single person straight into the scene', () => {
         const outfit = [{ slot: GarmentSlot.TOP, image: 'top.png' }];
         const plain = buildPersonPrompt(person({ outfit }));

@@ -3,6 +3,7 @@ import {
     ArrayMaxSize,
     ArrayMinSize,
     IsArray,
+    IsBoolean,
     IsEnum,
     IsInt,
     IsOptional,
@@ -111,6 +112,11 @@ export class PersonSpecDto {
     /** The person's persistent twin (or photo): data URI or public URL. */
     @IsString()
     twinImage: string;
+
+    /** True when `twinImage` is the generated full-body twin rather than a selfie. */
+    @IsBoolean()
+    @IsOptional()
+    bodyTwin?: boolean;
 
     @ValidateNested()
     @Type(() => BodyDto)
