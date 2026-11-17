@@ -18,6 +18,8 @@ const LIVE = { status: 'PUBLISHED' } as const;
 export interface StoreFacets {
   categories: { name: string; count: number; cover: string }[];
   occasions: { name: string; count: number }[];
+  /** The brand's own groupings, biggest first, each with a cover picture. */
+  collections: { name: string; count: number; cover: string }[];
   pieces: number;
   minPrice: number | null;
   maxPrice: number | null;
@@ -73,7 +75,7 @@ export class BrandStoreService {
   ) {}
 
   private async liveBrand(slug: string) {
-    const brand = await this.prisma.brand.findFirst({ where: { slug, isDeleted: false, status: 'ACTIVE' }, select: { ...PUBLIC_BRAND_SELECT, createdAt: true } });
+    const brand = await this.prisma.brand.findFirst({ where: { slug, isDeleted: false, status: 'ACTIVE' }, select: { ...PUBLIC_BRAND_SELECT, createdAt: true, gstin: true } });
     if (!brand) throw new NotFoundException('Brand not found');
     return brand;
   }
@@ -88,7 +90,7 @@ export class BrandStoreService {
 
   private facets(brandId: string): Promise<StoreFacets> {
     return this.facetsCache.get(brandId, async () => {
-      const [cats, covers, occ, price, pieces] = await Promise.all([
+      const [cats, covers, occ, price, pieces, colls, collCovers] = await Promise.all([
         this.prisma.brandProduct.groupBy({ by: ['category'], where: { brandId, ...LIVE }, _count: { _all: true } }),
         this.prisma.$queryRaw<{ category: string; cover: string }[]>(Prisma.sql`
           SELECT DISTINCT ON (category) category, images[1] AS cover
@@ -99,11 +101,20 @@ export class BrandStoreService {
           WHERE "brandId" = ${brandId} AND status = 'PUBLISHED' GROUP BY o ORDER BY n DESC, o ASC`),
         this.prisma.brandProduct.aggregate({ where: { brandId, ...LIVE, price: { gt: 0 } }, _min: { price: true }, _max: { price: true } }),
         this.prisma.brandProduct.count({ where: { brandId, ...LIVE } }),
+        this.prisma.brandProduct.groupBy({ by: ['collection'], where: { brandId, ...LIVE, collection: { not: null } }, _count: { _all: true } }),
+        this.prisma.$queryRaw<{ collection: string; cover: string }[]>(Prisma.sql`
+          SELECT DISTINCT ON (collection) collection, images[1] AS cover
+          FROM "BrandProduct" WHERE "brandId" = ${brandId} AND status = 'PUBLISHED' AND collection IS NOT NULL AND cardinality(images) > 0
+          ORDER BY collection, featured DESC, "createdAt" DESC`),
       ]);
+      const collCoverBy = new Map(collCovers.map((c) => [c.collection, c.cover]));
       const coverBy = new Map(covers.map((c) => [c.category, c.cover]));
       return {
         categories: cats.map((c) => ({ name: c.category, count: c._count._all, cover: coverBy.get(c.category) ?? '' })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
         occasions: occ.map((o) => ({ name: o.name, count: Number(o.n) })),
+        collections: colls
+          .map((c) => ({ name: c.collection as string, count: c._count._all, cover: collCoverBy.get(c.collection as string) ?? '' }))
+          .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
         pieces,
         minPrice: price._min.price ?? null,
         maxPrice: price._max.price ?? null,
@@ -138,6 +149,7 @@ export class BrandStoreService {
         story: brand.description ?? '',
         category: brand.category ?? '',
         isVerified: brand.isVerified,
+        gstRegistered: Boolean(brand.gstin),
         websiteUrl: brand.websiteUrl || text(social.website),
         themeAccent: text(social.themeAccent),
         announcementText: text(social.announcementText),
@@ -165,6 +177,7 @@ export class BrandStoreService {
     if (term) where.OR = [{ title: { contains: term, mode: 'insensitive' } }, { description: { contains: term, mode: 'insensitive' } }, { category: { contains: term, mode: 'insensitive' } }];
     if (q.category?.trim()) where.category = { equals: q.category.trim(), mode: 'insensitive' };
     if (q.occasion?.trim()) where.occasions = { has: q.occasion.trim() };
+    if (q.collection?.trim()) where.collection = { equals: q.collection.trim(), mode: 'insensitive' };
     if (q.minPrice !== undefined || q.maxPrice !== undefined) where.price = { ...(q.minPrice !== undefined ? { gte: q.minPrice } : {}), ...(q.maxPrice !== undefined ? { lte: q.maxPrice } : {}) };
     if (q.inStock) where.stock = { gt: 0 };
 

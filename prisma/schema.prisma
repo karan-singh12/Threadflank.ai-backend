@@ -9,6 +9,7 @@ datasource db {
 model User {
   id                  String              @id @default(cuid())
   dropWaitlist        DropWaitlistEntry[]
+  brandFollows        BrandFollow[]
   email               String              @unique
   username            String?             @unique
   password            String
@@ -496,11 +497,21 @@ model Brand {
   widgetEnabled Boolean @default(false)
   widgetDomains Json? // Allowed storefront origins, e.g. ["https://shop.example.com"]
 
+  /// GST number as the brand entered it (format-checked, not verified with the GST portal).
+  gstin String?
+  /// Monthly plan (FREE, GROWTH or PRO). A paid plan counts only while planUntil is in the future.
+  plan      String    @default("FREE")
+  planUntil DateTime?
+
   managers       BrandManagerAssignment[]
   accounts       BrandAccount[]
   posts          BrandPost[]
   stories        BrandStory[]
   widgetSessions BrandWidgetSession[]
+  events         BrandEvent[]
+  followers      BrandFollow[]
+  savedContent   BrandContentItem[]
+  payments       BrandPayment[]
   products       BrandProduct[]
   drops          BrandDrop[]
   bids           Bid[]
@@ -527,8 +538,9 @@ model BrandManagerAssignment {
 // A brand's own login (separate from User and AdminUser). One Brand can have several accounts.
 
 enum BrandAccountRole {
-  OWNER
-  MANAGER
+  OWNER // everything, including billing and the team
+  MANAGER // everything except billing and the team
+  VIEWER // read-only
 }
 
 model BrandAccount {
@@ -768,8 +780,9 @@ model TwinProfile {
   weightKg      Int?
   skinTone      String?
   hairColor     String?
-  selfieUrl     String?
-  baseAvatarUrl String?
+  selfieUrl     String? // The uploaded selfie
+  avatarUrl     String? // Generated clean portrait
+  baseAvatarUrl String? // Generated full-body twin Drape dresses
   backgroundId  String? // Preferred StudioBackground (scene) id
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -1084,6 +1097,33 @@ model BrandWidgetSession {
   @@index([brandId, createdAt])
 }
 
+// ─── What shoppers do with a brand (feeds the brand dashboard and insights) ──
+
+enum BrandEventType {
+  STORE_VIEW
+  PRODUCT_VIEW
+  DRAPE
+  SAVE
+  SHARE
+  CLICK
+}
+
+model BrandEvent {
+  id        String         @id @default(cuid())
+  brandId   String
+  /// The piece it was about, when there is one. Plain id (no FK) so history survives deleting a piece.
+  productId String?
+  type      BrandEventType
+  userId    String?
+  createdAt DateTime       @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, type, createdAt])
+  @@index([productId, type, createdAt])
+  @@index([createdAt])
+}
+
 // ─── Branded share cards ──────────────────────────────────────────────────────
 
 model ShareEvent {
@@ -1183,7 +1223,7 @@ model CreditTransaction {
   /// Positive for grants and refunds, negative for spending.
   delta        Int
   balanceAfter Int
-  /// FREE | PURCHASE | DRAPE | LOOK_EDIT | VIDEO | REFUND | ADMIN
+  /// FREE | PURCHASE | DRAPE | LOOK_EDIT | TWIN | VIDEO | REFUND | ADMIN
   reason       String
   refId        String?
   note         String?
@@ -1271,6 +1311,8 @@ model BrandDrop {
   launchDate     DateTime
   bannerUrl      String   @default("")
   productsCount  Int      @default(1)
+  /** Set once followers and the waitlist have been told the drop is live. */
+  notifiedAt     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -1278,6 +1320,73 @@ model BrandDrop {
   waitlist DropWaitlistEntry[]
 
   @@index([brandId, launchDate])
+}
+
+/// A brand buying AI credits: one Razorpay order, credited once when it is paid.
+model BrandPayment {
+  id                String        @id @default(cuid())
+  brandId           String
+  packId            String
+  credits           Int
+  /// Amount charged in paise (after any coupon).
+  amount            Int
+  currency          String        @default("INR")
+  couponCode        String?
+  providerOrderId   String        @unique
+  providerPaymentId String?       @unique
+  status            PaymentStatus @default(CREATED)
+  failureReason     String?
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// A promo code for brands buying credits: a percentage off and/or bonus credits.
+model BrandCoupon {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  percentOff   Int       @default(0)
+  bonusCredits Int       @default(0)
+  maxUses      Int?
+  usedCount    Int       @default(0)
+  expiresAt    DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+}
+
+/// Copy a brand kept from the AI writer, so it can find it again.
+model BrandContentItem {
+  id          String   @id @default(cuid())
+  brandId     String
+  contentType String
+  title       String
+  body        String
+  garmentId   String?
+  createdAt   DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt(sort: Desc)])
+  @@index([brandId, contentType])
+}
+
+/// A shopper following a brand: they hear about its new drops.
+model BrandFollow {
+  id        String   @id @default(cuid())
+  brandId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, userId])
+  @@index([userId, createdAt])
 }
 
 /// A shopper who asked to be told when a drop goes live.

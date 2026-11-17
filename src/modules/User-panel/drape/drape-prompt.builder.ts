@@ -53,6 +53,13 @@ export const POSTURE_PROMPTS: Record<Exclude<GroupPosture, 'auto'>, string> = {
         'Arrange them seated on a simple bench or steps, with anyone extra standing behind. Every full outfit, including footwear, stays visible.',
 };
 
+/**
+ * Face fidelity is the weakest part of full-body renders (the face is a small part of the frame),
+ * so identity is spelled out feature by feature instead of a vague "match the selfie".
+ */
+export const IDENTITY_RULE =
+    'FACE IDENTITY IS THE TOP PRIORITY. Treat the selfie as a strict identity reference, not as inspiration: copy the face exactly: head and jaw shape, forehead, eyebrows, eye shape, eye colour and spacing, nose, lips, cheeks, ears, skin texture, freckles, moles, scars, facial hair and hairline. Do not beautify, smooth, slim, age or "average" the face, and never replace it with a generic model face. Render the face large enough and sharp, in natural focus, looking at the camera.';
+
 const isSelf = (p: PersonSpecDto) => p.ref === 'me' || p.relation?.toLowerCase() === 'you';
 
 /**
@@ -73,7 +80,7 @@ export function resolvePosture(people: PersonSpecDto[], posture: GroupPosture = 
 }
 
 /** "a 28-year-old man, 178 cm, 72 kg, honey (#c68642) skin tone" from whatever details exist. */
-export function describeBody(person: PersonSpecDto): string {
+export function describeBody(person: Pick<PersonSpecDto, 'body'>): string {
     const b = person.body ?? {};
     const gender = b.gender?.toLowerCase();
     const noun = gender === 'male' ? 'man' : gender === 'female' ? 'woman' : 'person';
@@ -132,11 +139,16 @@ export function buildPersonPrompt(person: PersonSpecDto, styling?: string, scene
     }
 
     const prompt = [
-        `Virtual try-on photograph. Image 1 is a selfie of ${person.name}: use it only for their face, facial features, hairstyle, hair colour and skin tone.`,
-        `Create a full-body photo of this exact person as ${describeBody(person)}, with natural proportions for that height and build, dressed in the following pieces:`,
+        person.bodyTwin
+            ? `Virtual try-on photograph. Image 1 is the saved full-body twin of ${person.name}: keep their face, facial features, hairstyle, hair colour, skin tone and body shape exactly as in it, and replace the plain clothes they wear there.`
+            : `Virtual try-on photograph. Image 1 is a selfie of ${person.name}: use it only for their face, facial features, hairstyle, hair colour and skin tone.`,
+        person.bodyTwin
+            ? 'Create a full-body photo of this exact person dressed in the following pieces:'
+            : `Create a full-body photo of this exact person as ${describeBody(person)}, with natural proportions for that height and build, dressed in the following pieces:`,
         ...lines,
         'For any part of the outfit not listed (such as footwear), choose simple items that suit the look.',
-        'Their face must match the selfie exactly, so they are clearly the same person. Do not copy the selfie’s framing, background or clothing.',
+        IDENTITY_RULE,
+        'Do not copy the selfie’s framing, background or clothing.',
         person.notes?.trim() ? `Styling for ${person.name}: ${person.notes.trim()}.` : '',
         styling?.trim() ? `Overall styling: ${styling.trim()}.` : '',
         scene
@@ -185,7 +197,9 @@ export function buildOnePassGroupPrompt(dto: GroupDrapeDto): PromptJob {
             ? 'wears simple, everyday clothes that suit the group'
             : 'anything not listed (such as footwear) is simple and suits the look';
         return [
-            `Person ${i + 1}: ${person.name}${relation}, ${describeBody(person)}. Image ${twinImage} is their selfie: their face, hair and skin tone exactly as in it; draw the full body from these details.`,
+            person.bodyTwin
+                ? `Person ${i + 1}: ${person.name}${relation}, ${describeBody(person)}. Image ${twinImage} is their saved full-body twin: their face, hair, skin tone and body shape exactly as in it; replace the plain clothes they wear there.`
+                : `Person ${i + 1}: ${person.name}${relation}, ${describeBody(person)}. Image ${twinImage} is their selfie: their face, hair and skin tone exactly as in it; draw the full body from these details.`,
             pieces.length ? `  Wears: ${pieces.join('; ')}. Reproduce each piece exactly: colour, print, fabric, texture, neckline, sleeves, length and fit; ${rest}.` : `  ${rest[0].toUpperCase()}${rest.slice(1)}.`,
             person.notes?.trim() ? `  Styling for ${person.name}: ${person.notes.trim()}.` : '',
         ]
@@ -199,7 +213,8 @@ export function buildOnePassGroupPrompt(dto: GroupDrapeDto): PromptJob {
     const prompt = [
         `Create one photorealistic group photograph of exactly ${people.length} people together in the same place, captured in a single shot. From left to right:`,
         ...roster,
-        'Each person must clearly be the same person as in their own selfie (do not copy the selfies’ framing, backgrounds or clothing). Every garment goes only on the person it is listed for: never swap or blend clothes between people, and never add or remove anyone.',
+        `${IDENTITY_RULE} Apply this to every person, each against their own selfie only, and never blend faces between people. Do not copy the selfies’ framing, backgrounds or clothing.`,
+        'Every garment goes only on the person it is listed for: never swap or blend clothes between people, and never add or remove anyone.',
         POSTURE_PROMPTS[posture],
         heightRule,
         sceneRule(dto.scene, images),
@@ -235,7 +250,7 @@ export function buildGroupPrompt(dto: GroupDrapeDto, dressed: string[]): PromptJ
         `Create one photorealistic group photograph of exactly ${people.length} people together in the same place, captured in a single shot.`,
         `Images 1 to ${people.length} each show one of them, already dressed. From left to right:`,
         ...roster,
-        'Each person keeps exactly their face, hairstyle, skin tone, body shape and every garment, colour, print, fabric and accessory from their own image. Never swap or blend clothes between people, and never add or remove anyone.',
+        'Each person keeps exactly their face (every facial feature unchanged, no beautifying or smoothing, never blended with another person), hairstyle, skin tone, body shape and every garment, colour, print, fabric and accessory from their own image. Never swap or blend clothes between people, and never add or remove anyone.',
         POSTURE_PROMPTS[posture],
         heightRule,
         sceneRule(dto.scene, images),

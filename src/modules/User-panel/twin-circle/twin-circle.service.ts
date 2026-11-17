@@ -3,8 +3,8 @@ import { BorrowStatus, CircleMemberKind, CircleMemberStatus, FriendshipStatus } 
 import { PrismaService } from "../../../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 
-/** Max people in a circle besides the owner (spec: an intimate circle of 4–5). */
-export const CIRCLE_MEMBER_LIMIT = 5;
+/** Max people in a circle besides the owner: for now one, so a look is you plus one person. */
+export const CIRCLE_MEMBER_LIMIT = 1;
 
 export const USER_SUMMARY = { id: true, username: true, email: true, avatar: true } as const;
 
@@ -114,7 +114,7 @@ export class TwinCircleService {
       where: { circleId, status: { not: CircleMemberStatus.DECLINED } },
     });
     if (count >= CIRCLE_MEMBER_LIMIT) {
-      throw new BadRequestException(`Your circle is full (${CIRCLE_MEMBER_LIMIT} members).`);
+      throw new BadRequestException(`Your circle is full (${CIRCLE_MEMBER_LIMIT} ${CIRCLE_MEMBER_LIMIT === 1 ? "member" : "members"}).`);
     }
   }
 

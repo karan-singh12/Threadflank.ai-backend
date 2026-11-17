@@ -1,5 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BrandEventsService } from '../../../shared/brand-events/brand-events.service';
 import { Prisma } from '@prisma/client';
+import { assertPlanRoom } from '../billing/plans';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateGarmentDto, UpdateGarmentDto } from '../dto/brand-common.dto';
 import { TaxonomyService } from '../taxonomy/taxonomy.service';
@@ -105,6 +107,7 @@ export interface PublicProduct {
   hasBuyLink: boolean;
   featured: boolean;
   newDrop: boolean;
+  collection?: string;
   description?: string;
   likesCount: number;
   sharesCount: number;
@@ -127,6 +130,7 @@ export const toPublicProduct = (r: Row): PublicProduct => ({
   hasBuyLink: r.buyUrl.trim().length > 0,
   featured: r.featured,
   newDrop: r.newDrop,
+  collection: r.collection ?? undefined,
   description: r.description ?? undefined,
   likesCount: r._count.likes,
   sharesCount: r.sharesCount,
@@ -140,6 +144,7 @@ export class BrandCatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly taxonomy: TaxonomyService,
+    @Optional() private readonly events?: BrandEventsService,
   ) {}
 
   /** The whole catalog, newest first. Capped: a brand with more pieces than this must use findPage. */
@@ -326,6 +331,7 @@ export class BrandCatalogService {
       });
     }
 
+    await assertPlanRoom(this.prisma, brandId, 'garments', fresh.length);
     let created = 0;
     for (let i = 0; i < fresh.length; i += 250) {
       created += (await this.prisma.brandProduct.createMany({ data: fresh.slice(i, i + 250), skipDuplicates: true })).count;
@@ -354,6 +360,7 @@ export class BrandCatalogService {
   }
 
   async create(brandId: string, dto: CreateGarmentDto): Promise<ProductItemEntity> {
+    await assertPlanRoom(this.prisma, brandId, 'garments');
     if (dto.featured) await this.assertFeaturedRoom(brandId);
     const category = await this.taxonomy.requireCategory(dto.category);
     const occasions = await this.taxonomy.requireOccasions(dto.occasions ?? []);
@@ -455,6 +462,7 @@ export class BrandCatalogService {
     // A garment with no store link yet has nowhere to send the shopper.
     if (!row || !row.buyUrl.trim()) return null;
     await this.prisma.brandProduct.update({ where: { id: row.id }, data: { clicksCount: { increment: 1 } } });
+    this.events?.record({ brandId: row.brandId, type: 'CLICK', productId: row.id });
     return { buyUrl: row.buyUrl };
   }
 }

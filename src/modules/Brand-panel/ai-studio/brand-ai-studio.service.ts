@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { GenerateContentDto, SimulateVideoDto } from '../dto/brand-common.dto';
+import { GenerateContentDto, SaveContentDto, SimulateVideoDto } from '../dto/brand-common.dto';
 import { SdkService } from '../../../sdk';
 import { BrandCatalogService } from '../catalog/brand-catalog.service';
 
@@ -14,6 +14,8 @@ export interface MotionPreset {
   promptSuggestion: string;
   estimatedSeconds: number;
 }
+
+const LIBRARY_MAX = 500;
 
 @Injectable()
 export class BrandAiStudioService {
@@ -122,6 +124,33 @@ export class BrandAiStudioService {
       remainingCredits,
       createdAt: new Date().toISOString(),
     };
+  }
+
+  // ── Saved copy (the content library) ──────────────────────────────────
+
+  async listLibrary(brandId: string, type?: string) {
+    return this.prisma.brandContentItem.findMany({
+      where: { brandId, ...(type ? { contentType: type } : {}) },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: LIBRARY_MAX,
+    });
+  }
+
+  async saveToLibrary(brandId: string, dto: SaveContentDto) {
+    if ((await this.prisma.brandContentItem.count({ where: { brandId } })) >= LIBRARY_MAX) {
+      throw new BadRequestException(`Your library is full (${LIBRARY_MAX} items). Delete some older copy first.`);
+    }
+    if (dto.garmentId) await this.catalogService.findOne(brandId, dto.garmentId);
+    const text = dto.text.trim();
+    return this.prisma.brandContentItem.create({
+      data: { brandId, contentType: dto.contentType, body: text, garmentId: dto.garmentId ?? null, title: (dto.title?.trim() || text.replace(/s+/g, " ")).slice(0, 80) },
+    });
+  }
+
+  async removeFromLibrary(brandId: string, id: string) {
+    const { count } = await this.prisma.brandContentItem.deleteMany({ where: { id, brandId } });
+    if (count === 0) throw new NotFoundException("Saved copy not found.");
+    return { success: true, id };
   }
 
   async simulateVideo(brandId: string, dto: SimulateVideoDto) {

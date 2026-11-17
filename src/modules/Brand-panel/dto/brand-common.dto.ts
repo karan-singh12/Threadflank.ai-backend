@@ -1,7 +1,14 @@
 import { ArrayMaxSize, IsIn, IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail, IsInt, IsISO8601, Matches, ValidateIf, MinLength, MaxLength, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CONTENT_TYPES, type BrandContentType } from '../../../sdk/prompts/brand-content.prompt';
 
 export class UpdateBrandProfileDto {
+  @ApiPropertyOptional({ example: '27AAPFU0939F1ZV', description: 'GST number; send an empty string to remove it' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(20)
+  gstin?: string;
+
   @ApiPropertyOptional({ example: 'Raw Mango Atelier' })
   @IsString()
   @IsOptional()
@@ -448,9 +455,9 @@ export class TrackClickDto {
 }
 
 export class GenerateContentDto {
-  @ApiProperty({ enum: ['product_description', 'instagram_caption', 'launch_announcement', 'email_blurb', 'seo_meta'] })
-  @IsIn(['product_description', 'instagram_caption', 'launch_announcement', 'email_blurb', 'seo_meta'])
-  contentType!: 'product_description' | 'instagram_caption' | 'launch_announcement' | 'email_blurb' | 'seo_meta';
+  @ApiProperty({ enum: CONTENT_TYPES })
+  @IsIn([...CONTENT_TYPES])
+  contentType!: BrandContentType;
 
   @ApiPropertyOptional({ description: "One of this brand's garments; leave out for brand-level copy" })
   @IsString()
@@ -513,12 +520,23 @@ export class InviteMemberDto {
   @MinLength(2)
   @MaxLength(80)
   name!: string;
+
+  @ApiPropertyOptional({ enum: ['MANAGER', 'VIEWER'], description: 'MANAGER can do everything except billing and the team; VIEWER is read-only.' })
+  @IsIn(['MANAGER', 'VIEWER'])
+  @IsOptional()
+  role?: 'MANAGER' | 'VIEWER';
 }
 
 export class SetMemberActiveDto {
   @ApiProperty()
   @IsBoolean()
   isActive!: boolean;
+}
+
+export class SetMemberRoleDto {
+  @ApiProperty({ enum: ['MANAGER', 'VIEWER'] })
+  @IsIn(['MANAGER', 'VIEWER'])
+  role!: 'MANAGER' | 'VIEWER';
 }
 
 export class WidgetDomainsDto {
@@ -528,4 +546,27 @@ export class WidgetDomainsDto {
   @IsString({ each: true })
   @MaxLength(200, { each: true })
   domains!: string[];
+}
+
+export class SaveContentDto {
+  @ApiProperty({ enum: CONTENT_TYPES })
+  @IsIn([...CONTENT_TYPES])
+  contentType!: BrandContentType;
+
+  @ApiProperty({ maxLength: 2000 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  text!: string;
+
+  @ApiPropertyOptional({ description: "The garment the copy is about, if any" })
+  @IsString()
+  @IsOptional()
+  garmentId?: string;
+
+  @ApiPropertyOptional({ description: "A short label; defaults to the first words of the text" })
+  @IsString()
+  @IsOptional()
+  @MaxLength(120)
+  title?: string;
 }

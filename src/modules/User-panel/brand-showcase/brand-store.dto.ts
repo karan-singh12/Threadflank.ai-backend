@@ -24,6 +24,8 @@ export class StoreCatalogQueryDto {
   @IsOptional() @IsString() @MaxLength(80) q?: string;
   @IsOptional() @IsString() @MaxLength(60) category?: string;
   @IsOptional() @IsString() @MaxLength(60) occasion?: string;
+  /** A brand collection by name, e.g. "Wedding Edit 2026". */
+  @IsOptional() @IsString() @MaxLength(80) collection?: string;
   @IsOptional() @IsIn(STORE_SORTS as unknown as string[]) sort?: StoreSort;
   @IsOptional() @IsNumber() @Min(0) @Type(() => Number) minPrice?: number;
   @IsOptional() @IsNumber() @Min(0) @Type(() => Number) maxPrice?: number;

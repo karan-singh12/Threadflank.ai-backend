@@ -6,6 +6,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { BrandLoginDto, RegisterBrandDto } from '../dto/brand-common.dto';
 import { BRAND_AUTH, BrandJwtStrategy } from './brand-jwt.strategy';
 import { MailerService } from '../../../shared/mailer/mailer.service';
+import { assertPlanRoom } from '../billing/plans';
 import { AppLogger } from '../../../shared/logger/logger.service';
 import { passwordResetEmailHtml, verificationEmailHtml } from '../../../common/utils/email.util';
 
@@ -55,6 +56,7 @@ export class BrandAuthService {
       isOnlineOnly: social.isOnlineOnly ?? !social.flagshipAddress,
       followersCount: 0,
       aiCredits: social.aiCredits ?? 0,
+      gstin: brand.gstin ?? '',
       currentRank: 0,
       totalBrands: 0,
       rankScore: social.rankScore ?? 0,
@@ -312,14 +314,15 @@ export class BrandAuthService {
     });
   }
 
-  async inviteMember(brandAccountId: string, brandId: string, input: { email: string; name: string }) {
+  async inviteMember(brandAccountId: string, brandId: string, input: { email: string; name: string; role?: 'MANAGER' | 'VIEWER' }) {
     const owner = await this.requireOwner(brandAccountId, brandId);
+    await assertPlanRoom(this.prisma, brandId, 'team');
     const email = input.email.trim().toLowerCase();
     if (await this.prisma.brandAccount.findUnique({ where: { email } })) throw new ConflictException('That email already has a Threadflank brand account.');
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
     // The invitee never sees this: they set their own password from the emailed link.
     const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
-    const member = await this.prisma.brandAccount.create({ data: { brandId, email, password, name: input.name.trim(), role: 'MANAGER' } });
+    const member = await this.prisma.brandAccount.create({ data: { brandId, email, password, name: input.name.trim(), role: input.role === 'VIEWER' ? 'VIEWER' : 'MANAGER' } });
     await this.sendInvite(member, brand.name, owner.name);
     return { id: member.id, name: member.name, email: member.email, role: member.role, isActive: member.isActive, pending: true, lastLoginAt: null };
   }
@@ -331,6 +334,17 @@ export class BrandAuthService {
     if (member.emailVerified) throw new BadRequestException('This person has already joined.');
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
     await this.sendInvite(member, brand.name, owner.name);
+  }
+
+  /** Changes a teammate's role. Their sessions are ended so the new role applies the next time they sign in. */
+  async setMemberRole(brandAccountId: string, brandId: string, memberId: string, role: 'MANAGER' | 'VIEWER') {
+    await this.requireOwner(brandAccountId, brandId);
+    const member = await this.prisma.brandAccount.findFirst({ where: { id: memberId, brandId } });
+    if (!member) throw new NotFoundException('Team member not found.');
+    if (member.role === 'OWNER') throw new ForbiddenException('The owner' + "'" + 's role cannot be changed.');
+    await this.prisma.brandAccount.update({ where: { id: memberId }, data: { role } });
+    await this.prisma.brandRefreshToken.updateMany({ where: { brandAccountId: memberId, revokedAt: null }, data: { revokedAt: new Date() } });
+    return { id: memberId, role };
   }
 
   async setMemberActive(brandAccountId: string, brandId: string, memberId: string, isActive: boolean) {

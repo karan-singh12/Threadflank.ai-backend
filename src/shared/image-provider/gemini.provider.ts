@@ -28,6 +28,12 @@ export class GeminiImageProvider implements ImageProvider {
         return configured;
     }
 
+    /** GEMINI_IMAGE_SIZE: '1K' | '2K' | '4K' (default 2K); set to 'off' to omit. */
+    private get imageSize(): string {
+        const v = (process.env.GEMINI_IMAGE_SIZE ?? '2K').trim().toUpperCase();
+        return v === 'OFF' ? '' : v;
+    }
+
     isConfigured(): boolean {
         return Boolean(this.apiKey);
     }
@@ -74,7 +80,12 @@ export class GeminiImageProvider implements ImageProvider {
                         contents: [{ role: 'user', parts }],
                         generationConfig: {
                             responseModalities: ['IMAGE'],
-                            imageConfig: { aspectRatio: job.aspectRatio ?? '3:4' },
+                            imageConfig: {
+                                aspectRatio: job.aspectRatio ?? '3:4',
+                                // Higher output resolution gives the face more pixels, which is what
+                                // keeps likeness in full-body shots. Only Gemini 3 image models accept it.
+                                ...(this.imageSize && /^gemini-3/.test(modelToTry) ? { imageSize: this.imageSize } : {}),
+                            },
                         },
                         safetySettings: [
                             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { assertPlanRoom } from '../billing/plans';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateDropDto, UpdateDropDto } from '../dto/brand-common.dto';
 
@@ -61,6 +62,7 @@ export class BrandDropsService {
 
   async create(brandId: string, dto: CreateDropDto): Promise<LaunchDropEntity> {
     this.assertNotPast(dto.launchDate);
+    await assertPlanRoom(this.prisma, brandId, 'drops');
     const row = await this.prisma.brandDrop.create({
       data: {
         brandId,

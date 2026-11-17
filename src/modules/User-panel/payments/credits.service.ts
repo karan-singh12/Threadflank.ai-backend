@@ -3,7 +3,7 @@ import { BillingSettings, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 /** Why a balance changed, stored on each CreditTransaction. */
-export type CreditReason = 'FREE' | 'PURCHASE' | 'DRAPE' | 'LOOK_EDIT' | 'VIDEO' | 'REFUND' | 'ADMIN';
+export type CreditReason = 'FREE' | 'PURCHASE' | 'DRAPE' | 'LOOK_EDIT' | 'TWIN' | 'VIDEO' | 'REFUND' | 'ADMIN';
 
 /** Packs created the first time the table is empty; prices and credits are edited in the admin panel. */
 const DEFAULT_PACKS: Prisma.CreditPackCreateManyInput[] = [
@@ -126,6 +126,17 @@ export class CreditsService implements OnModuleInit {
         } catch (err) {
             this.logger.error(`Refund of ${amount} credits to ${userId} failed: ${err}`);
         }
+    }
+
+    /** Whether this account has ever had a balance change for `reason`. */
+    async hasTransaction(userId: string, reason: CreditReason): Promise<boolean> {
+        return (await this.prisma.creditTransaction.count({ where: { userId, reason } })) > 0;
+    }
+
+    /** Logs a free use (zero credits) so "first one is free" can be checked later. */
+    async recordFree(userId: string, reason: CreditReason, note: string) {
+        const balance = await this.balance(userId);
+        await this.prisma.creditTransaction.create({ data: { userId, delta: 0, balanceAfter: balance, reason, note } });
     }
 
     /** Recent balance changes, newest first. */

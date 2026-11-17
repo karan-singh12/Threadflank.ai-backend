@@ -4,9 +4,12 @@ import { OptionalAuthGuard } from '../../../common/guards/optional-auth.guard';
 import { AuthGuard } from '../../../common/guards/auth.guard';
 import { BrandShowcaseService } from './brand-showcase.service';
 import { BrandDirectoryService } from './brand-directory.service';
+import { BrandFollowService } from './brand-follow.service';
 import { BrandStoreService } from './brand-store.service';
 import { DirectoryQueryDto, StoreCatalogQueryDto } from './brand-store.dto';
 import { TaxonomyService } from '../../Brand-panel/taxonomy/taxonomy.service';
+import { BrandEventsService } from '../../../shared/brand-events/brand-events.service';
+import { getClientIp } from '../../../common/utils/client-ip.util';
 
 /** What shoppers see of a brand's own panel data: its catalog, its drops, and the runway spotlight. */
 @ApiTags('Brands (App) — showcase')
@@ -17,6 +20,8 @@ export class BrandShowcaseController {
     private readonly showcase: BrandShowcaseService,
     private readonly directory: BrandDirectoryService,
     private readonly store: BrandStoreService,
+    private readonly events: BrandEventsService,
+    private readonly follows: BrandFollowService,
   ) {}
 
   @Get('directory')
@@ -37,7 +42,34 @@ export class BrandShowcaseController {
   @UseGuards(OptionalAuthGuard)
   @ApiOperation({ summary: "A brand's virtual store: profile, showcase, filters, new in and drops in one call" })
   async storeHome(@Param('slug') slug: string, @Req() req: any) {
-    return { message: 'Store fetched', data: await this.store.store(slug, req.user?.userId) };
+    const data = await this.store.store(slug, req.user?.userId);
+    const [followers, following] = await Promise.all([this.follows.count(data.brand.id), this.follows.isFollowing(data.brand.id, req.user?.userId)]);
+    (data.brand as any).followers = followers;
+    (data.brand as any).following = following;
+    this.events.record({ brandId: data.brand.id, type: 'STORE_VIEW', userId: req.user?.userId, actor: req.user?.userId ?? getClientIp(req) });
+    return { message: 'Store fetched', data };
+  }
+
+  @Get('following')
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Brands the signed-in shopper follows' })
+  async following(@Req() req: any) {
+    return { message: 'Following fetched', data: await this.follows.mine(req.user.userId) };
+  }
+
+  @Post(':slug/follow')
+  @UseGuards(AuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Follow a brand to hear about its drops' })
+  async follow(@Param('slug') slug: string, @Req() req: any) {
+    return { message: 'Following', data: await this.follows.follow(slug, req.user.userId) };
+  }
+
+  @Delete(':slug/follow')
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Unfollow a brand' })
+  async unfollow(@Param('slug') slug: string, @Req() req: any) {
+    return { message: 'Unfollowed', data: await this.follows.unfollow(slug, req.user.userId) };
   }
 
   @Get(':slug/pieces')

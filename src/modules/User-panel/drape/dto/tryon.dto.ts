@@ -37,4 +37,10 @@ export class TryOnRequestDto {
     @IsBoolean()
     @IsOptional()
     removeBackground?: boolean;
+
+    /** Set when the garment is a brand's catalog piece, so the brand sees the try-on. */
+    @IsString()
+    @IsOptional()
+    @MaxLength(40)
+    brandProductId?: string;
 }

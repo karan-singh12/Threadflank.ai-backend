@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../../../common/guards/auth.guard';
 import { CreditsService } from '../payments/credits.service';
+import { BrandEventsService } from '../../../shared/brand-events/brand-events.service';
 import { DrapeService } from './drape.service';
 import { AnimateDto } from './dto/animate.dto';
 import { GroupDrapeDto } from './dto/group-drape.dto';
@@ -23,6 +24,7 @@ export class DrapeController {
     constructor(
         private readonly drapeService: DrapeService,
         private readonly credits: CreditsService,
+        private readonly events: BrandEventsService,
     ) {}
 
     // Every generated image costs 1 credit (a video costs the admin-set amount). Credits are
@@ -33,6 +35,8 @@ export class DrapeController {
     async tryon(@Req() req: any, @Body() dto: TryOnRequestDto) {
         const userId = req.user?.userId;
         const result = await this.credits.charge(userId, 1, 'DRAPE', () => this.drapeService.processTryOn(userId, dto));
+        // Only a try-on that finished (and was paid for) counts for the brand.
+        if (dto.brandProductId) void this.events.recordDrape(dto.brandProductId, userId);
         return { success: true, ...result, creditsLeft: await this.credits.balance(userId) };
     }
 
@@ -42,6 +46,9 @@ export class DrapeController {
     async group(@Req() req: any, @Body() dto: GroupDrapeDto) {
         const userId = req.user?.userId;
         const result = await this.credits.charge(userId, 1, 'DRAPE', () => this.drapeService.processGroup(userId, dto));
+        // Each brand piece in a finished look counts once, however many people wear it.
+        const pieceIds = new Set(dto.people.flatMap((p) => p.outfit.map((o) => o.brandProductId).filter((id): id is string => Boolean(id))));
+        for (const id of [...pieceIds].slice(0, 16)) void this.events.recordDrape(id, userId);
         return { success: true, ...result, creditsLeft: await this.credits.balance(userId) };
     }
 

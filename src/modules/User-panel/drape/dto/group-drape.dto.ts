@@ -3,6 +3,7 @@ import {
     ArrayMaxSize,
     ArrayMinSize,
     IsArray,
+    IsBoolean,
     IsEnum,
     IsInt,
     IsOptional,
@@ -42,6 +43,12 @@ export class OutfitPieceDto {
     @IsOptional()
     @MaxLength(60)
     label?: string;
+
+    /** Set when this piece is a brand's catalog piece, so the brand sees the try-on. */
+    @IsString()
+    @IsOptional()
+    @MaxLength(40)
+    brandProductId?: string;
 
     /** Ethnic garment kind (saree, lehenga, sherwani…) for drape-aware rendering. */
     @IsString()
@@ -105,6 +112,11 @@ export class PersonSpecDto {
     /** The person's persistent twin (or photo): data URI or public URL. */
     @IsString()
     twinImage: string;
+
+    /** True when `twinImage` is the generated full-body twin rather than a selfie. */
+    @IsBoolean()
+    @IsOptional()
+    bodyTwin?: boolean;
 
     @ValidateNested()
     @Type(() => BodyDto)

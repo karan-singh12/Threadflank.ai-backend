@@ -8,10 +8,13 @@ const account = (over: object = {}) => ({ id: 'a1', brandId: 'b1', email: 'o@x.c
 
 function authSvc(prismaOver: any = {}) {
   const prisma: any = {
-    brandAccount: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    brandAccount: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(1) },
+    brandProduct: { count: jest.fn().mockResolvedValue(0) },
+    brandDrop: { count: jest.fn().mockResolvedValue(0) },
     brandRefreshToken: { updateMany: jest.fn() },
     brandAuthToken: { create: jest.fn() },
-    brand: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'b1', name: 'Acme' }) },
+    // Inviting is checked against the plan; this brand is on Pro, so there is room.
+    brand: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'b1', name: 'Acme' }), findUnique: jest.fn().mockResolvedValue({ plan: 'PRO', planUntil: new Date(Date.now() + 86_400_000) }) },
     $transaction: jest.fn((ops: any[]) => Promise.all(ops)),
     ...prismaOver,
   };

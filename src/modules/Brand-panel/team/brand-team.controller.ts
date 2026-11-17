@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { BrandAuthService } from '../auth/brand-auth.service';
 import { BrandAuthGuard, CurrentBrand } from '../auth/brand-auth.guard';
 import { AuthenticatedBrand } from '../auth/brand-jwt.strategy';
-import { InviteMemberDto, SetMemberActiveDto } from '../dto/brand-common.dto';
+import { InviteMemberDto, SetMemberActiveDto, SetMemberRoleDto } from '../dto/brand-common.dto';
 
 /** The brand owner adds teammates; they set their own password from an emailed link. */
 @ApiTags('Brand Panel — Team')
@@ -35,6 +35,12 @@ export class BrandTeamController {
   async resend(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string) {
     await this.auth.resendInvite(brand.brandAccountId, brand.brandId, id);
     return { message: 'Invitation sent again' };
+  }
+
+  @Patch(':id/role')
+  @ApiOperation({ summary: 'Change a teammate' + "'" + 's role (owner only)' })
+  async setRole(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string, @Body() dto: SetMemberRoleDto) {
+    return { message: 'Role updated', data: await this.auth.setMemberRole(brand.brandAccountId, brand.brandId, id, dto.role) };
   }
 
   @Patch(':id')
