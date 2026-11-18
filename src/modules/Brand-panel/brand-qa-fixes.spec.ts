@@ -4,8 +4,8 @@ import { plainToInstance } from 'class-transformer';
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { BrandDropsService } from './drops/brand-drops.service';
 import { BrandProfileService } from './profile/brand-profile.service';
-import { BrandAiStudioService } from './ai-studio/brand-ai-studio.service';
-import { CreateDropDto, CreateGarmentDto, SimulateVideoDto, UpdateGarmentDto } from './dto/brand-common.dto';
+import { BrandVideoService } from './ai-studio/brand-video.service';
+import { CreateBrandVideoDto, CreateDropDto, CreateGarmentDto, UpdateGarmentDto } from './dto/brand-common.dto';
 
 const errorsOf = async (cls: any, data: object) => (await validate(plainToInstance(cls, data))).map((e) => e.property);
 const day = 86_400_000;
@@ -38,10 +38,12 @@ describe('Garment and prompt validation', () => {
     expect(await errorsOf(UpdateGarmentDto, { buyUrl: 'http://a.com' })).toContain('buyUrl');
     expect(await errorsOf(UpdateGarmentDto, { buyUrl: 'https://a.com' })).toEqual([]);
   });
-  it('caps the AI prompt at 300 characters on the server', async () => {
-    const base = { motionPreset: 'red_carpet', motionIntensity: 50 };
-    expect(await errorsOf(SimulateVideoDto, { ...base, prompt: 'a'.repeat(300) })).toEqual([]);
-    expect(await errorsOf(SimulateVideoDto, { ...base, prompt: 'a'.repeat(3050) })).toContain('prompt');
+  it('caps the AI prompt at 300 characters on the server and only accepts known looks and shapes', async () => {
+    const base = { presetId: 'studio_turn' };
+    expect(await errorsOf(CreateBrandVideoDto, { ...base, prompt: 'a'.repeat(300) })).toEqual([]);
+    expect(await errorsOf(CreateBrandVideoDto, { ...base, prompt: 'a'.repeat(3050) })).toContain('prompt');
+    expect(await errorsOf(CreateBrandVideoDto, { presetId: 'made_up' })).toContain('presetId');
+    expect(await errorsOf(CreateBrandVideoDto, { ...base, aspectRatio: '4:3' })).toContain('aspectRatio');
   });
 });
 
@@ -63,12 +65,13 @@ describe('Flagship store needs an address', () => {
   });
 });
 
-describe('AI Studio never charges for a placeholder', () => {
+describe('AI Studio never charges when no video engine is connected', () => {
   it('returns 503 and leaves credits untouched', async () => {
-    const prisma: any = { brand: { findUnique: jest.fn(), updateMany: jest.fn() } };
-    const svc = new BrandAiStudioService(prisma, {} as any, {} as any);
-    await expect(svc.simulateVideo('b', { customImageUrl: 'https://x/y.jpg', motionPreset: 'red_carpet', motionIntensity: 50 } as any)).rejects.toThrow(ServiceUnavailableException);
-    expect(prisma.brand.findUnique).not.toHaveBeenCalled();
-    expect(prisma.brand.updateMany).not.toHaveBeenCalled();
+    const prisma: any = { $queryRaw: jest.fn(), brandVideo: { count: jest.fn().mockResolvedValue(0), create: jest.fn() } };
+    const svc = new BrandVideoService(prisma, {} as any, {} as any);
+    svc.engines = [];
+    await expect(svc.create('b', { customImageUrl: 'https://x/y.jpg', presetId: 'studio_turn' })).rejects.toThrow(ServiceUnavailableException);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.brandVideo.create).not.toHaveBeenCalled();
   });
 });

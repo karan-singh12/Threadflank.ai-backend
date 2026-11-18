@@ -29,6 +29,24 @@ export async function grantBrandCredits(db: Prisma.TransactionClient | PrismaSer
 }
 
 /**
+ * Takes `cost` credits in one SQL statement, only if the brand has that many. Returns the new
+ * balance, or null when the brand doesn't have enough (nothing is changed then).
+ */
+export async function spendBrandCredits(db: Prisma.TransactionClient | PrismaService, brandId: string, cost: number): Promise<number | null> {
+  const rows = await db.$queryRaw<{ credits: number }[]>`
+    UPDATE "Brand"
+    SET "socialLinks" = jsonb_set(
+          CASE WHEN jsonb_typeof("socialLinks") = 'object' THEN "socialLinks" ELSE '{}'::jsonb END,
+          '{aiCredits}',
+          to_jsonb(COALESCE(("socialLinks"->>'aiCredits')::int, 0) - ${cost}::int),
+          true),
+        "updatedAt" = now()
+    WHERE "id" = ${brandId} AND COALESCE(("socialLinks"->>'aiCredits')::int, 0) >= ${cost}
+    RETURNING COALESCE(("socialLinks"->>'aiCredits')::int, 0) AS credits`;
+  return rows.length ? Number(rows[0].credits) : null;
+}
+
+/**
  * Marks a brand order paid and grants its credits. Safe to call twice (Checkout callback and webhook
  * both do): only the call that flips the order to PAID credits it. Returns the payment, or null when
  * the order is not a brand order.

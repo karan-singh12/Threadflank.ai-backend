@@ -32,6 +32,8 @@ import { BrandProfileService } from './profile/brand-profile.service';
 import { BrandCatalogService } from './catalog/brand-catalog.service';
 import { BrandAnalyticsService } from './analytics/brand-analytics.service';
 import { BrandAiStudioService } from './ai-studio/brand-ai-studio.service';
+import { BrandVideoService } from './ai-studio/brand-video.service';
+import { BrandReelService } from './ai-studio/brand-reel.service';
 import { BrandBiddingService } from './bidding/brand-bidding.service';
 import { BrandDropsService } from './drops/brand-drops.service';
 import { BrandUploadService } from './upload/brand-upload.service';
@@ -72,6 +74,8 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandCatalogService,
     BrandAnalyticsService,
     BrandAiStudioService,
+    BrandVideoService,
+    BrandReelService,
     BrandBiddingService,
     BrandDropsService,
     BrandUploadService,

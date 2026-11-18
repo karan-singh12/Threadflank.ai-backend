@@ -37,7 +37,8 @@ FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 
 # Install OpenSSL for Prisma runtime, dumb-init for signal handling, and curl for healthchecks
-RUN apt-get update -y && apt-get install -y openssl dumb-init curl && rm -rf /var/lib/apt/lists/*
+# ffmpeg stitches AI Studio promo reels; the DejaVu fonts are what it draws the brand cards with.
+RUN apt-get update -y && apt-get install -y openssl dumb-init curl ffmpeg fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 ENV PORT=3003

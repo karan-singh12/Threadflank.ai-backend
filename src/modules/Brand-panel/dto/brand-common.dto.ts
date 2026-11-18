@@ -410,37 +410,88 @@ export class UpdateDropDto {
   productsCount?: number;
 }
 
-export class SimulateVideoDto {
-  @ApiPropertyOptional({ example: 'prod_01' })
+export const VIDEO_PRESET_IDS = ['studio_turn', 'runway_walk', 'festive_twirl', 'red_carpet', 'silk_motion', 'velvet_glow'] as const;
+
+/** Start an AI motion video from one of the brand's garments or an uploaded photo. */
+export class CreateBrandVideoDto {
+  @ApiPropertyOptional({ example: 'prod_01', description: "One of the brand's garments; its first photo is used" })
   @IsString()
+  @MaxLength(40)
   @IsOptional()
   garmentId?: string;
 
-  @ApiPropertyOptional({ example: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b' })
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/look.jpg', description: 'A photo the brand uploaded (https)' })
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   customImageUrl?: string;
 
-  @ApiProperty({ example: 'red_carpet', enum: ['red_carpet', 'high_street', 'silk_motion', 'velvet_glow'] })
-  @IsString()
-  motionPreset!: string;
+  @ApiProperty({ example: 'studio_turn', enum: VIDEO_PRESET_IDS })
+  @IsIn(VIDEO_PRESET_IDS)
+  presetId!: string;
 
-  @ApiProperty({ example: 75, minimum: 10, maximum: 100 })
-  @IsNumber()
-  @Min(10)
-  @Max(100)
-  motionIntensity!: number;
+  @ApiPropertyOptional({ example: '9:16', enum: ['9:16', '16:9'] })
+  @IsIn(['9:16', '16:9'])
+  @IsOptional()
+  aspectRatio?: string;
 
-  @ApiPropertyOptional({ example: 'A dramatic runway glide in slow motion under warm spotlight' })
+  @ApiPropertyOptional({ example: 'Warm evening light, a soft breeze lifting the pallu' })
   @IsString()
   @MaxLength(300)
   @IsOptional()
   prompt?: string;
+}
 
-  @ApiPropertyOptional({ example: true })
-  @IsBoolean()
+export const REEL_STYLE_IDS = ['lookbook', 'drop_teaser', 'festive_edit', 'detail_study'] as const;
+
+/** One outfit in a reel: a garment from the catalog or a photo the brand uploaded. */
+export class BrandReelShotDto {
+  @ApiPropertyOptional({ example: 'prod_01', description: "One of the brand's garments; its first photo is used" })
+  @IsString()
+  @MaxLength(40)
   @IsOptional()
-  promptEnhance?: boolean;
+  garmentId?: string;
+
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/look.jpg', description: 'A photo the brand uploaded (https)' })
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  customImageUrl?: string;
+
+  @ApiPropertyOptional({ example: 'Banarasi silk saree', description: 'On-screen name; defaults to the garment title' })
+  @IsString()
+  @MaxLength(60)
+  @IsOptional()
+  label?: string;
+
+  @ApiPropertyOptional({ example: '₹24,000', description: 'On-screen second line; defaults to the garment price' })
+  @IsString()
+  @MaxLength(40)
+  @IsOptional()
+  caption?: string;
+}
+
+export class CreateBrandReelDto {
+  @ApiPropertyOptional({ example: 'Wedding Edit 2026' })
+  @IsString()
+  @MaxLength(80)
+  @IsOptional()
+  title?: string;
+
+  @ApiProperty({ example: 'lookbook', enum: REEL_STYLE_IDS })
+  @IsIn(REEL_STYLE_IDS)
+  styleId!: string;
+
+  @ApiProperty({ type: [BrandReelShotDto], description: 'Three to five outfits, in the order they appear' })
+  @IsArray()
+  @ArrayMaxSize(5)
+  shots!: BrandReelShotDto[];
+
+  @ApiPropertyOptional({ example: 'Golden-hour light on a palace terrace' })
+  @IsString()
+  @MaxLength(300)
+  @IsOptional()
+  prompt?: string;
 }
 
 export class TrackClickDto {

@@ -511,6 +511,8 @@ model Brand {
   events         BrandEvent[]
   followers      BrandFollow[]
   savedContent   BrandContentItem[]
+  videos         BrandVideo[]
+  reels          BrandReel[]
   payments       BrandPayment[]
   products       BrandProduct[]
   drops          BrandDrop[]
@@ -1373,6 +1375,93 @@ model BrandContentItem {
 
   @@index([brandId, createdAt(sort: Desc)])
   @@index([brandId, contentType])
+}
+
+/// An AI motion video a brand rendered from a garment photo. Rendering takes minutes, so this is a
+/// job: RENDERING while the engine works, then READY (videoUrl is our stored copy) or FAILED
+/// (credits given back once, tracked by `refunded`).
+model BrandVideo {
+  id             String   @id @default(cuid())
+  brandId        String
+  garmentId      String?
+  status         String   @default("RENDERING") // RENDERING | READY | FAILED
+  engine         String // "veo" | "replicate"
+  model          String
+  operation      String? // the engine's job id, used to check progress
+  presetId       String
+  aspectRatio    String
+  durationSec    Int
+  prompt         String
+  sourceImageUrl String
+  videoUrl       String?
+  error          String?
+  credits        Int
+  refunded       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  finishedAt     DateTime?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+/// A promo reel: several garments rendered as clips, then stitched with the brand's own
+/// opening and closing cards into one 30-45s vertical video ready to post.
+model BrandReel {
+  id          String    @id @default(cuid())
+  brandId     String
+  /// RENDERING (shots) | COMPOSING (stitching) | READY | FAILED
+  status      String    @default("RENDERING")
+  title       String
+  styleId     String
+  aspectRatio String    @default("9:16")
+  engine      String
+  model       String
+  /// Set once every shot is in and the reel has been stitched.
+  videoUrl    String?
+  durationSec Int       @default(0)
+  error       String?
+  credits     Int
+  refunded    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  finishedAt  DateTime?
+
+  brand Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  shots BrandReelShot[]
+
+  @@index([brandId, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+/// One outfit inside a reel: its own clip, rendered like a single motion video.
+model BrandReelShot {
+  id             String   @id @default(cuid())
+  reelId         String
+  /// Order in the finished reel, from 0.
+  position       Int
+  garmentId      String?
+  /// The lower-third: what the shot says on screen.
+  label          String
+  caption        String   @default("")
+  presetId       String
+  /// The engine's job id for this shot.
+  operation      String?
+  /// RENDERING | READY | FAILED
+  status         String   @default("RENDERING")
+  sourceImageUrl String
+  clipUrl        String?
+  error          String?
+  prompt         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  reel BrandReel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@unique([reelId, position])
+  @@index([reelId])
 }
 
 /// A shopper following a brand: they hear about its new drops.
