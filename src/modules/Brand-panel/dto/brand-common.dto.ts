@@ -469,6 +469,12 @@ export class BrandReelShotDto {
   @MaxLength(40)
   @IsOptional()
   caption?: string;
+
+  @ApiPropertyOptional({ example: 'editorial_turn', description: "The move for this one shot; left out, the reel style picks it" })
+  @IsString()
+  @MaxLength(60)
+  @IsOptional()
+  presetId?: string;
 }
 
 export class CreateBrandReelDto {

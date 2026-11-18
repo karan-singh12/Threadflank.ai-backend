@@ -10,7 +10,7 @@ import { BrandCatalogService } from '../catalog/brand-catalog.service';
 import { CreateBrandReelDto } from '../dto/brand-common.dto';
 import { composeReel, hasFfmpeg } from './reel-compose';
 import { MAX_SHOTS, MIN_SHOTS, REEL_STYLES, findReelStyle, presetForShot } from './reel-styles';
-import { VIDEO_NEGATIVE_PROMPT, buildVideoPrompt } from './video-presets';
+import { VIDEO_NEGATIVE_PROMPT, buildVideoPrompt, findPreset } from './video-presets';
 import { VIDEO_ENGINES, engineById, pickVideoEngine, type VideoEngine } from './video-engines';
 
 /** Credits one reel costs, whatever its length: cheaper per clip than rendering them one by one. */
@@ -89,7 +89,8 @@ export class BrandReelService {
       const garment = shot.garmentId ? await this.catalog.findOne(brandId, shot.garmentId) : undefined;
       const sourceImageUrl = shot.customImageUrl?.trim() || garment?.images?.[0];
       if (!sourceImageUrl) throw new BadRequestException(`Outfit ${i + 1} has no photo. Upload one or pick a garment that has one.`);
-      const preset = presetForShot(style, i);
+      // A shot can name its own move; otherwise the style decides what this position gets.
+      const preset = (shot.presetId ? findPreset(shot.presetId) : undefined) ?? presetForShot(style, i);
       resolved.push({
         position: i,
         garmentId: garment?.id ?? null,
