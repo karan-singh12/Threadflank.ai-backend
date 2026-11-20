@@ -6,6 +6,7 @@ export { SdkService } from './sdk.service';
 export type { CaptionPromptInput } from './prompts/caption-generation.prompt';
 export type { OccasionPromptInput } from './prompts/occasion-planner.prompt';
 export type { OccasionPlanResult } from './agents/occasion-planner.agent';
+export type { SqlAnswer } from './agents/text-to-sql.agent';
 export type { RagQueryResult } from './rag/rag-query.service';
 export type { RagDocument } from './rag/ingestion/loader';
 export type { RouteOverride, ProviderName, TaskType } from './core/router/router.types';

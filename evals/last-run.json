@@ -1,0 +1,283 @@
+{
+  "ranAt": "2026-11-19T08:58:18.540Z",
+  "override": {
+    "provider": "groq"
+  },
+  "score": 29,
+  "total": 30,
+  "pct": 96.7,
+  "firstTry": 29,
+  "results": [
+    {
+      "id": 1,
+      "question": "How many brands are active and not deleted?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 4799,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS active_brand_count\nFROM \"Brand\"\nWHERE \"isDeleted\" = false\n  AND \"status\" = 'ACTIVE'\nLIMIT 200"
+    },
+    {
+      "id": 2,
+      "question": "How many products are published?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2362,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS published_products_count\nFROM \"BrandProduct\"\nWHERE \"publishedAt\" IS NOT NULL\nLIMIT 200"
+    },
+    {
+      "id": 3,
+      "question": "What is the average price of published products, rounded to 2 decimal places?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2599,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT ROUND(AVG(\"price\")::numeric, 2) AS \"average_price\"\nFROM \"BrandProduct\"\nWHERE \"publishedAt\" IS NOT NULL\nLIMIT 200"
+    },
+    {
+      "id": 4,
+      "question": "Which 5 product categories have the most products? Return the category and the count, highest first, breaking ties alphabetically by category.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2555,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"BrandProduct\".\"category\", COUNT(*) AS \"count\"\nFROM \"BrandProduct\"\nGROUP BY \"BrandProduct\".\"category\"\nORDER BY COUNT(*) DESC, \"BrandProduct\".\"category\" ASC\nLIMIT 5"
+    },
+    {
+      "id": 5,
+      "question": "What is the title and price of the most expensive published product? If several share the highest price, take the alphabetically first title.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2399,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"title\", \"price\"\nFROM \"BrandProduct\"\nWHERE \"publishedAt\" IS NOT NULL\nORDER BY \"price\" DESC, \"title\" ASC\nLIMIT 1"
+    },
+    {
+      "id": 6,
+      "question": "How many products are drape ready?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2719,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS \"drapeReadyCount\"\nFROM \"BrandProduct\"\nWHERE \"isDrapeReady\" = true\nLIMIT 200"
+    },
+    {
+      "id": 7,
+      "question": "How many distinct product categories are there?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2401,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(DISTINCT \"BrandProduct\".\"category\") AS distinct_category_count\nFROM \"BrandProduct\"\nLIMIT 200"
+    },
+    {
+      "id": 8,
+      "question": "What is the total stock across all published products?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2451,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT SUM(\"stock\") AS total_stock\nFROM \"BrandProduct\"\nWHERE \"publishedAt\" IS NOT NULL\nLIMIT 200"
+    },
+    {
+      "id": 9,
+      "question": "How many products are featured and have stock left?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2349,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS \"count\"\nFROM \"BrandProduct\"\nWHERE \"featured\" = true\n  AND \"stock\" > 0\nLIMIT 200"
+    },
+    {
+      "id": 10,
+      "question": "How many products were created in the last 30 days?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2238,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS product_count\nFROM \"BrandProduct\"\nWHERE \"createdAt\" >= (CURRENT_DATE - INTERVAL '30 days')\nLIMIT 200"
+    },
+    {
+      "id": 11,
+      "question": "List the 5 cheapest published products with their title and price, cheapest first, breaking ties alphabetically by title.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2239,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"BrandProduct\".\"title\", \"BrandProduct\".\"price\"\nFROM \"BrandProduct\"\nWHERE \"BrandProduct\".\"publishedAt\" IS NOT NULL\nORDER BY \"BrandProduct\".\"price\" ASC, \"BrandProduct\".\"title\" ASC\nLIMIT 5"
+    },
+    {
+      "id": 12,
+      "question": "How many brands are verified?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2732,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS verified_brands\nFROM \"Brand\"\nWHERE \"isVerified\" = true\nLIMIT 200"
+    },
+    {
+      "id": 13,
+      "question": "Which 5 brands have the most products? Return the brand name and the product count, highest first, breaking ties alphabetically by brand name.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2783,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"Brand\".\"name\",\n       COUNT(*) AS product_count\nFROM \"BrandProduct\"\nJOIN \"Brand\" ON \"BrandProduct\".\"brandId\" = \"Brand\".\"id\"\nGROUP BY \"Brand\".\"name\"\nORDER BY product_count DESC, \"Brand\".\"name\" ASC\nLIMIT 5"
+    },
+    {
+      "id": 14,
+      "question": "How many brand follows are there in total?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2806,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS total\nFROM \"BrandFollow\"\nLIMIT 200"
+    },
+    {
+      "id": 15,
+      "question": "What are the top 3 products by number of drapes? Return title and drapesCount, highest first, breaking ties alphabetically by title.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2407,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"BrandProduct\".\"title\", \"BrandProduct\".\"drapesCount\"\nFROM \"BrandProduct\"\nORDER BY \"BrandProduct\".\"drapesCount\" DESC, \"BrandProduct\".\"title\" ASC\nLIMIT 3"
+    },
+    {
+      "id": 16,
+      "question": "What is the total number of clicks across products, grouped by category, for the top 5 categories? Break ties alphabetically by category.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2742,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"BrandProduct\".\"category\",\n       SUM(\"BrandProduct\".\"clicksCount\") AS total_clicks\nFROM \"BrandProduct\"\nGROUP BY \"BrandProduct\".\"category\"\nORDER BY total_clicks DESC, \"BrandProduct\".\"category\" ASC\nLIMIT 5"
+    },
+    {
+      "id": 17,
+      "question": "How many brand events are there of each type?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 3518,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"BrandEvent\".\"type\", COUNT(*) AS \"eventCount\"\nFROM \"BrandEvent\"\nGROUP BY \"BrandEvent\".\"type\"\nORDER BY \"eventCount\" DESC\nLIMIT 200"
+    },
+    {
+      "id": 18,
+      "question": "How many brand events happened in the last 7 days?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2544,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS event_count\nFROM \"BrandEvent\"\nWHERE \"createdAt\" >= now() - interval '7 days'\nLIMIT 1"
+    },
+    {
+      "id": 19,
+      "question": "How many AI videos are there in each status?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2451,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"BrandVideo\".\"status\", COUNT(*) AS \"videoCount\"\nFROM \"BrandVideo\"\nGROUP BY \"BrandVideo\".\"status\"\nLIMIT 200"
+    },
+    {
+      "id": 20,
+      "question": "What is the average duration in seconds of videos that are ready?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2639,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT AVG(\"durationSec\") AS \"averageDurationSec\"\nFROM \"BrandVideo\"\nWHERE \"status\" = 'ready'\nLIMIT 200"
+    },
+    {
+      "id": 21,
+      "question": "How many videos failed and were refunded?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2739,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS failed_refunded_videos\nFROM \"BrandVideo\"\nWHERE \"error\" IS NOT NULL\n  AND \"refunded\" = true\nLIMIT 200"
+    },
+    {
+      "id": 22,
+      "question": "How many promo reels are there in each status?",
+      "passed": false,
+      "attempts": 1,
+      "ms": 1767,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": null,
+      "reason": "Outside the available tables."
+    },
+    {
+      "id": 23,
+      "question": "How many shots are there in total across all reels?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2511,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT COUNT(*) AS total_shots\nFROM \"BrandReelShot\"\nLIMIT 200"
+    },
+    {
+      "id": 24,
+      "question": "What is the total number of credits charged for reels, counting refunded ones too?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2783,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT SUM(\"BrandReel\".\"credits\") AS total_credits\nFROM \"BrandReel\"\nLIMIT 200"
+    },
+    {
+      "id": 25,
+      "question": "What percentage of AI requests succeeded? Round to 2 decimal places.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 3029,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE \"success\") / NULLIF(COUNT(*), 0), 2) AS \"success_percentage\"\nFROM \"AiRequestLog\"\nLIMIT 200"
+    },
+    {
+      "id": 26,
+      "question": "What is the total estimated cost in USD of all AI requests?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2346,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT SUM(\"AiRequestLog\".\"costUsd\") AS total_cost_usd\nFROM \"AiRequestLog\"\nLIMIT 200"
+    },
+    {
+      "id": 27,
+      "question": "Which 3 models were used for the most AI requests? Return the model and the count, highest first, breaking ties alphabetically by model.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2763,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"AiRequestLog\".\"model\", COUNT(*) AS \"request_count\"\nFROM \"AiRequestLog\"\nGROUP BY \"AiRequestLog\".\"model\"\nORDER BY \"request_count\" DESC, \"AiRequestLog\".\"model\" ASC\nLIMIT 3"
+    },
+    {
+      "id": 28,
+      "question": "What is the average latency in milliseconds per provider for AI requests?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2565,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"provider\", AVG(\"latencyMs\") AS \"averageLatencyMs\"\nFROM \"AiRequestLog\"\nGROUP BY \"provider\"\nLIMIT 200"
+    },
+    {
+      "id": 29,
+      "question": "What is the average overall try-on eval score per engine?",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2395,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"engine\", AVG(\"overallScore\") AS \"avgOverallScore\"\nFROM \"TryOnEval\"\nGROUP BY \"engine\"\nLIMIT 200"
+    },
+    {
+      "id": 30,
+      "question": "List the active discover categories by sort order, returning name and sortOrder.",
+      "passed": true,
+      "attempts": 1,
+      "ms": 2415,
+      "served": "groq/openai/gpt-oss-120b",
+      "sql": "SELECT \"name\", \"sortOrder\"\nFROM \"DiscoverCategory\"\nWHERE \"isActive\" = true\nORDER BY \"sortOrder\"\nLIMIT 200"
+    }
+  ]
+}

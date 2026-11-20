@@ -3,6 +3,7 @@ import { CaptionGenerationChain } from './chains/caption-generation.chain';
 import { BrandContentChain } from './chains/brand-content.chain';
 import { BrandContentInput } from './prompts/brand-content.prompt';
 import { OccasionPlannerAgent, OccasionPlanResult } from './agents/occasion-planner.agent';
+import { TextToSqlAgent, SqlAnswer } from './agents/text-to-sql.agent';
 import { WardrobeCombosAgent, WardrobeCombo } from './agents/wardrobe-combos.agent';
 import { RagQueryService, RagQueryResult } from './rag/rag-query.service';
 import { EmbedPipeline } from './rag/ingestion/embed-pipeline';
@@ -26,6 +27,7 @@ export class SdkService {
     private readonly captionChain: CaptionGenerationChain,
     private readonly brandContentChain: BrandContentChain,
     private readonly occasionAgent: OccasionPlannerAgent,
+    private readonly textToSqlAgent: TextToSqlAgent,
     private readonly combosAgent: WardrobeCombosAgent,
     private readonly ragQueryService: RagQueryService,
     private readonly embedPipeline: EmbedPipeline,
@@ -48,6 +50,16 @@ export class SdkService {
 
   generateWardrobeCombos(userId: string, input: WardrobeCombosInput): Promise<{ combos: WardrobeCombo[] }> {
     return this.combosAgent.run(userId, input);
+  }
+
+  /**
+   * A plain-English question about the catalog and the platform's own AI telemetry, answered by
+   * generating SQL and running it read-only. The reachable tables are fixed in sql-schema.ts and
+   * exclude everything personal, so this is safe to put behind an admin screen but must never be
+   * widened to "ask anything about the database".
+   */
+  askPlatformData(question: string, opts: { requestedBy?: string } = {}): Promise<SqlAnswer> {
+    return this.textToSqlAgent.run(question, opts);
   }
 
   ragQuery(question: string, opts: { namespace?: string; topK?: number; requestedBy?: string } = {}): Promise<RagQueryResult> {
