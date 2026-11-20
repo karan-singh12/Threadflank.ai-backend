@@ -7,6 +7,8 @@ import { AiRequestLoggerService } from './logging/ai-request-logger.service';
 import { CaptionGenerationChain } from './chains/caption-generation.chain';
 import { BrandContentChain } from './chains/brand-content.chain';
 import { OccasionPlannerAgent } from './agents/occasion-planner.agent';
+import { TextToSqlAgent } from './agents/text-to-sql.agent';
+import { ReadOnlyDb } from './sql/readonly-db.service';
 import { WardrobeCombosAgent } from './agents/wardrobe-combos.agent';
 import { VectorStoreClient } from './rag/store/vector-store.client';
 import { EmbedPipeline } from './rag/ingestion/embed-pipeline';
@@ -25,6 +27,8 @@ const PROVIDERS = [
   CaptionGenerationChain,
   BrandContentChain,
   OccasionPlannerAgent,
+  TextToSqlAgent,
+  ReadOnlyDb,
   WardrobeCombosAgent,
   VectorStoreClient,
   EmbedPipeline,

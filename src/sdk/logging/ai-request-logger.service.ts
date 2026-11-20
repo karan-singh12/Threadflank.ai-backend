@@ -33,6 +33,10 @@ export class AiRequestLoggerService {
       totalTokens: input.usage?.totalTokens,
     });
 
+    // The eval harness asks questions *about* this table, so it must be able to stop writing to
+    // it — otherwise a run changes the very numbers it is checking. Never set in production.
+    if (process.env.AI_REQUEST_LOG === 'off') return;
+
     try {
       await this.prisma.aiRequestLog.create({
         data: {

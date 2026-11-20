@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminRole } from '@prisma/client';
 import { AuthGuard } from '../../../common/guards/auth.guard';
@@ -8,6 +8,7 @@ import { AdminRoles } from '../../../common/decorators/admin-roles.decorator';
 import { CurrentAdmin } from '../../../common/decorators/current-admin.decorator';
 import { AuthenticatedAdmin } from '../../../common/interfaces/admin-jwt-payload.interface';
 import { AiObservabilityService, type EvalInput, type ExternalUsageInput, type LogFilter } from './ai-observability.service';
+import { SdkService } from '../../../sdk';
 
 @ApiTags('Admin Panel — LLM observability')
 @ApiBearerAuth()
@@ -15,7 +16,10 @@ import { AiObservabilityService, type EvalInput, type ExternalUsageInput, type L
 @UseGuards(AdminAuthGuard, AdminRolesGuard)
 @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
 export class AdminAiObservabilityController {
-  constructor(private readonly ai: AiObservabilityService) {}
+  constructor(
+    private readonly ai: AiObservabilityService,
+    private readonly sdk: SdkService,
+  ) {}
 
   @Get('overview')
   async overview(@Query('days') days?: string) {
@@ -69,5 +73,19 @@ export class AdminAiObservabilityController {
   @Post('evals')
   async createEval(@Body() body: EvalInput, @CurrentAdmin() admin: AuthenticatedAdmin) {
     return { message: 'Score saved', data: await this.ai.createEval(body, admin.adminUserId) };
+  }
+
+  /**
+   * Admin-only on purpose: the SQL path reaches catalog and AI telemetry across every brand, so
+   * it sits behind the same guard as the rest of this dashboard rather than on the end-user API.
+   */
+  @Post('ask-data')
+  @ApiOperation({ summary: 'Answer a question about catalog and AI telemetry by generating read-only SQL' })
+  async askData(@Body() body: { question?: string }, @CurrentAdmin() admin: AuthenticatedAdmin) {
+    const question = (body?.question ?? '').trim();
+    if (!question) throw new BadRequestException('A question is required.');
+
+    const answer = await this.sdk.askPlatformData(question, { requestedBy: admin.adminUserId });
+    return { message: answer.sql ? 'Query answered' : 'Question not answerable', data: answer };
   }
 }

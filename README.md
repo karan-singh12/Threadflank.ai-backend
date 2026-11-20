@@ -96,6 +96,29 @@ A module's service and Nest module file live in the panel that owns the data. It
 * Every call (and every failed attempt) is logged to `AiRequestLog` with tokens and an estimated cost; the admin panel's AI page reads it.
 * Drape's image work (try-on, twin, poses, makeup) runs in the web app (`frontend/src/lib/server/image-engine.ts`) on Replicate, Gemini, OpenAI or OpenRouter, whichever has a key and credits. Each run is reported here (`POST /api/ai/usage`).
 
+### Text-to-SQL (`src/sdk/sql`, `src/sdk/agents/text-to-sql.agent.ts`)
+A plain-English question is turned into one PostgreSQL `SELECT` and answered from the real database. The model is the least trusted part of the path, so nothing it writes reaches data directly:
+
+1. **Allow-list** (`sql-schema.ts`) — only brand catalog, engagement counters and AI telemetry (17 tables). Users, messages, wardrobes, payments and tokens are outside it, and columns matching `email`, `phone`, `gstin`, `*AdminId`, `userId`, `requestedBy`, … are refused even inside an allowed table.
+2. **Guard** (`sql-guard.ts`) — a lexical gate that refuses anything it does not positively recognise as a single read: multiple statements, comments, any write verb, `pg_*`/`information_schema`, a table outside the list, a `LIMIT` above 200. A missing `LIMIT` is the one thing it rewrites rather than refuses. Covered by `sql-guard.spec.ts`, which runs on every `npm test` with no database or model needed.
+3. **Read-only transaction** (`readonly-db.service.ts`) — the statement runs inside `BEGIN TRANSACTION READ ONLY` with a 5s `statement_timeout`, on a pool of 2 connections, and is always rolled back. Set `READONLY_DATABASE_URL` to a role that only has `SELECT` on the allow-listed tables and the boundary is enforced by Postgres itself; without it the path still cannot write, but a guard bug could read more than it should, so production should always set it.
+
+A refused or failed query is handed back to the model once with the reason — most failures are a quoted-identifier slip it fixes immediately — and after that the question goes unanswered rather than half-answered.
+
+Exposed as `SdkService.askPlatformData()`, as the `query_platform_data` agent tool, and over HTTP at `POST /api/admin-panel/ai/ask-data` (admin-guarded, since the data spans every brand).
+
+**Accuracy** is measured by execution: `evals/sql-30.json` holds 30 questions with hand-written reference SQL, and a question counts only when the agent's rows match the reference's rows.
+
+```bash
+npm run eval:sql                          # prints X/30 and writes evals/last-run.json
+npm run eval:sql -- --provider groq       # pin the model being scored
+npm run eval:sql -- --only 4,17
+```
+
+Last run: **29/30 (96.7%)** on `groq/openai/gpt-oss-120b`, median 2.6s per question, no retries needed. The one miss answers `UNANSWERABLE` for a table that was in its own prompt. A score belongs to a model and to the data it ran against, so quote it with both — `evals/last-run.json` records them.
+
+The harness sets `AI_REQUEST_LOG=off`, because four of the questions ask about `AiRequestLog` and every question makes an LLM call that would otherwise be written to it. Never set that variable in production.
+
 ### Rate limiting
 * One global throttler: 100 requests/min per route per IP.
 * Auth controllers are limited to 10/min and uploads to 20/min via `@Throttle({ default: … })`.
