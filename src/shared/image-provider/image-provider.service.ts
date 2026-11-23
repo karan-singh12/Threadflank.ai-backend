@@ -43,6 +43,17 @@ export class ImageProviderService {
     }
 
     /**
+     * Whether any image engine has its credentials in this environment — optionally narrowed to the
+     * engines a particular job can use. Callers ask before charging for a render, so a brand is told
+     * "not connected" instead of being billed for a request that cannot leave the building.
+     */
+    hasEngine(engines?: ('replicate' | 'gemini')[]): boolean {
+        return this.getEngineOrder().some(
+            (engine) => this.getProvider(engine).isConfigured() && (!engines || engines.includes(engine)),
+        );
+    }
+
+    /**
      * Generates an image using the first available provider, automatically
      * falling back to secondary providers if the primary encounters quota/rate limits or failure.
      */

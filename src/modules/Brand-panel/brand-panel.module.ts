@@ -6,6 +6,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { StorageModule } from '../../shared/storage/storage.module';
 import { UploadsModule } from '../User-panel/uploads/uploads.module';
 import { SdkModule } from '../../sdk';
+import { ImageProviderModule } from '../../shared/image-provider/image-provider.module';
 
 // Controllers
 import { BrandAuthController } from './auth/brand-auth.controller';
@@ -13,6 +14,7 @@ import { BrandProfileController } from './profile/brand-profile.controller';
 import { BrandCatalogController } from './catalog/brand-catalog.controller';
 import { BrandAnalyticsController } from './analytics/brand-analytics.controller';
 import { BrandAiStudioController } from './ai-studio/brand-ai-studio.controller';
+import { BrandModelController } from './ai-studio/model/brand-model.controller';
 import { BrandBiddingController } from './bidding/brand-bidding.controller';
 import { BrandDropsController } from './drops/brand-drops.controller';
 import { BrandUploadController } from './upload/brand-upload.controller';
@@ -34,6 +36,7 @@ import { BrandAnalyticsService } from './analytics/brand-analytics.service';
 import { BrandAiStudioService } from './ai-studio/brand-ai-studio.service';
 import { BrandVideoService } from './ai-studio/brand-video.service';
 import { BrandReelService } from './ai-studio/brand-reel.service';
+import { BrandModelService } from './ai-studio/model/brand-model.service';
 import { BrandBiddingService } from './bidding/brand-bidding.service';
 import { BrandDropsService } from './drops/brand-drops.service';
 import { BrandUploadService } from './upload/brand-upload.service';
@@ -43,6 +46,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
   imports: [
     PrismaModule,
     StorageModule.register(),
+    ImageProviderModule,
     UploadsModule,
     MailerModule,
     SdkModule,
@@ -56,6 +60,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandCatalogController,
     BrandAnalyticsController,
     BrandAiStudioController,
+    BrandModelController,
     BrandBiddingController,
     BrandDropsController,
     BrandUploadController,
@@ -76,6 +81,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandAiStudioService,
     BrandVideoService,
     BrandReelService,
+    BrandModelService,
     BrandBiddingService,
     BrandDropsService,
     BrandUploadService,

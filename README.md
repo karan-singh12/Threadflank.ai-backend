@@ -69,6 +69,7 @@ backend/
 * **`User-panel/`**: shopper app APIs and public/embed routes. `auth` (`/user/auth`), `chat` (conversations, calls, Socket.io), `users`, `posts`, `wardrobe`, `looks`, `twin`, `twin-circle`, `drape`, `events`, `stylists`, `share`, `notifications`, `uploads`, `payments` (`/billing`), `rooms`, plus the public read controllers for `brands`, `brand-posts`, `brand-stories`, `cms`, `contact`, `studio-backgrounds`, `widget` and the AI usage ingest (`/ai/usage`).
 * **`Admin-panel/`**: staff APIs under `/admin-panel/*` and `/admin/*`. `admin-auth`, `admin-users`, `admin`, `admin-ops`, `security-observability`, `email-templates`, `brands`, `brand-posts`, `brand-stories`, `cms`, `contact`, `studio-backgrounds`, `widget`, `ai-observability`, plus the admin controllers for `stylists`, `share` and `payments`.
 * **`Brand-panel/`**: brand portal APIs under `/brand/*`. `auth`, `profile`, `catalog`, `analytics`, `ai-studio`, `drops`, `bidding`, `upload`.
+  * `ai-studio/` is the brand's own generative code and shares nothing with the shopper's Drape beyond the engine adapters in `shared/image-provider`: `brand-ai-studio.service.ts` (written copy), `brand-video.service.ts` and `brand-reel.service.ts` (motion), and **`ai-studio/model/`** (model shoots). Reviewing brand AI work means reading that one folder — nothing in `User-panel/drape` or `User-panel/twin` affects it.
 
 A module's service and Nest module file live in the panel that owns the data. Its controllers sit in the panel whose users call them.
 
@@ -95,6 +96,22 @@ A module's service and Nest module file live in the panel that owns the data. It
 * Providers without an API key are skipped. A failing provider hands the task to the next one in `LLM_FALLBACK_CHAIN`. The occasion planner is routed to Claude and runs on the fallback chain until `ANTHROPIC_API_KEY` is set.
 * Every call (and every failed attempt) is logged to `AiRequestLog` with tokens and an estimated cost; the admin panel's AI page reads it.
 * Drape's image work (try-on, twin, poses, makeup) runs in the web app (`frontend/src/lib/server/image-engine.ts`) on Replicate, Gemini, OpenAI or OpenRouter, whichever has a key and credits. Each run is reported here (`POST /api/ai/usage`).
+
+### Brand AI Studio — model shoots (`src/modules/Brand-panel/ai-studio/model`)
+
+A brand sends a flat garment photo and picks a model, a pose, a backdrop and a framing; the piece
+comes back worn. Routes are under `/brand/ai-studio/model/*` (`presets`, `status`, `shoots`).
+
+* The cast lives in `model-presets.ts` and `buildShootPrompt` (`model-prompt.ts`) turns a chosen set-up
+  into the engine's instruction. A brand picks from the cast, it never writes the prompt, so every
+  word sent to the engine is one we wrote. The prompt's first rule is garment fidelity: the piece
+  must come back the colour, cut and print it went in as, because this photo goes on a product page.
+* A render answers in one call, so there is no job to poll: credits are taken, the engine is asked,
+  and either a `BrandModelShot` row is written or the credits are returned with the reason. It needs
+  an engine that reads a reference image, so it asks for Gemini specifically.
+* Preview photos for the panel's model and pose tiles are rendered once and committed as static
+  files: `npm run studio:previews` (needs `GEMINI_API_KEY` with image quota, plus `sharp`). They land
+  in `Brand-panel/public/ai-studio/models/`, which is where the presets' `previewUrl`s point.
 
 ### Text-to-SQL (`src/sdk/sql`, `src/sdk/agents/text-to-sql.agent.ts`)
 A plain-English question is turned into one PostgreSQL `SELECT` and answered from the real database. The model is the least trusted part of the path, so nothing it writes reaches data directly:

@@ -513,6 +513,7 @@ model Brand {
   savedContent   BrandContentItem[]
   videos         BrandVideo[]
   reels          BrandReel[]
+  modelShots     BrandModelShot[]
   payments       BrandPayment[]
   products       BrandProduct[]
   drops          BrandDrop[]
@@ -1405,6 +1406,32 @@ model BrandVideo {
 
   @@index([brandId, createdAt(sort: Desc)])
   @@index([status])
+}
+
+/// One finished model shoot: a flat garment photo rendered as the piece worn by one of the
+/// studio's model presets. An image render answers in a single call, so there is no in-progress
+/// state here — a row exists only once the frame has been produced and stored.
+model BrandModelShot {
+  id             String   @id @default(cuid())
+  brandId        String
+  garmentId      String?
+  modelId        String // the body preset: slim | regular | curve | tall | petite | broad
+  poseId         String
+  backdropId     String
+  framingId      String
+  direction      String? // the brand's own art-direction line, when it gave one
+  prompt         String // exactly what the engine was asked, kept for support and review
+  sourceImageUrl String
+  imageUrl       String
+  provider       String // "gemini" | "replicate"
+  model          String
+  credits        Int
+  createdAt      DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt(sort: Desc)])
+  @@index([brandId, garmentId])
 }
 
 /// A promo reel: several garments rendered as clips, then stitched with the brand's own

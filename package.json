@@ -17,7 +17,7 @@
     "test:watch": "jest --watch",
     "seed": "ts-node --transpile-only prisma/seed.ts",
     "seed:brand": "ts-node --transpile-only prisma/seed-brand.ts",
-    "seed:discover":"ts-node --transpile-only prisma/seed-discover.ts",
+    "seed:discover": "ts-node --transpile-only prisma/seed-discover.ts",
     "seed:demo": "ts-node --transpile-only prisma/seed-demo.ts",
     "seed:all": "npm run seed",
     "seed:scale": "ts-node --transpile-only prisma/seed-scale.ts",
@@ -29,7 +29,8 @@
     "redis:up": "docker compose up -d --wait redis",
     "services:up": "docker compose up -d --wait",
     "services:down": "docker compose down",
-    "db:reset": "prisma db push --force-reset && npm run seed"
+    "db:reset": "prisma db push --force-reset && npm run seed",
+    "studio:previews": "ts-node --transpile-only -P tsconfig.json scripts/generate-model-previews.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1144.0",

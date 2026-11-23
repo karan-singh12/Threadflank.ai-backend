@@ -1,9 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { promises as fs } from 'fs';
-import * as path from 'path';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { downloadStored } from '../../../shared/storage/r2-objects';
 import { IStorageProvider, STORAGE_PROVIDER } from '../../../shared/storage/storage.interface';
+import { asDataUri, loadSourceImage } from './source-image';
 import { grantBrandCredits, spendBrandCredits } from '../billing/brand-credits';
 import { BrandCatalogService } from '../catalog/brand-catalog.service';
 import { CreateBrandVideoDto } from '../dto/brand-common.dto';
@@ -16,7 +14,6 @@ export const VIDEO_COST = 15;
 const MAX_IN_PROGRESS = 2;
 /** A render still unfinished after this long is treated as failed (and refunded). */
 const GIVE_UP_AFTER_MS = 20 * 60_000;
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 type VideoRow = Awaited<ReturnType<PrismaService['brandVideo']['findFirstOrThrow']>>;
 
@@ -73,7 +70,7 @@ export class BrandVideoService {
       throw new BadRequestException(`You already have ${rendering} videos rendering. Wait for one to finish, then start another.`);
     }
 
-    const image = await this.loadImage(sourceImageUrl);
+    const image = await loadSourceImage(sourceImageUrl);
     const aspectRatio = engine.aspectRatios.length ? (dto.aspectRatio && engine.aspectRatios.includes(dto.aspectRatio) ? dto.aspectRatio : engine.aspectRatios[0]) : 'auto';
     const prompt = buildVideoPrompt({ preset, direction: dto.prompt, garment: garment ? { title: garment.title, category: garment.category, colors: garment.colors } : undefined });
 
@@ -86,7 +83,7 @@ export class BrandVideoService {
     try {
       started = await engine.start({
         image,
-        imageUrl: `data:${image.mimeType};base64,${image.bytes.toString('base64')}`,
+        imageUrl: asDataUri(image),
         prompt,
         negativePrompt: VIDEO_NEGATIVE_PROMPT,
         aspectRatio,
@@ -173,38 +170,6 @@ export class BrandVideoService {
     });
     if (count) await grantBrandCredits(this.prisma, row.brandId, row.credits);
     return this.prisma.brandVideo.findUniqueOrThrow({ where: { id: row.id } });
-  }
-
-  /** The photo as bytes: a data URI, a file in local storage (`/public/...`), or a stored/remote URL. */
-  private async loadImage(url: string): Promise<{ bytes: Buffer; mimeType: string }> {
-    try {
-      let bytes: Buffer;
-      let mimeType = 'image/jpeg';
-      if (url.startsWith('data:')) {
-        const m = url.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
-        if (!m) throw new Error('bad data URI');
-        mimeType = m[1] || mimeType;
-        bytes = Buffer.from(m[3], m[2] ? 'base64' : 'utf8');
-      } else if (url.startsWith('/')) {
-        const root = path.resolve(process.cwd(), 'public');
-        const file = path.resolve(process.cwd(), url.replace(/^\/+/, ''));
-        if (!file.startsWith(root + path.sep)) throw new Error('outside public uploads');
-        bytes = await fs.readFile(file);
-        mimeType = /\.png$/i.test(file) ? 'image/png' : /\.webp$/i.test(file) ? 'image/webp' : 'image/jpeg';
-      } else if (/^https:\/\//i.test(url)) {
-        const stored = await downloadStored(url);
-        bytes = stored.body;
-        mimeType = stored.contentType;
-      } else {
-        throw new Error('unsupported URL');
-      }
-      if (!/^image\//.test(mimeType)) throw new Error('not an image');
-      if (bytes.length > MAX_IMAGE_BYTES) throw new BadRequestException('That photo is over 10 MB. Use a smaller one.');
-      return { bytes, mimeType };
-    } catch (err) {
-      if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException("We couldn't read that photo. Choose another garment or upload the photo again.");
-    }
   }
 
   private toView(v: VideoRow) {
