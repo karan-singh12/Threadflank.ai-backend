@@ -10,6 +10,7 @@ import { DirectoryQueryDto, StoreCatalogQueryDto } from './brand-store.dto';
 import { TaxonomyService } from '../../Brand-panel/taxonomy/taxonomy.service';
 import { BrandEventsService } from '../../../shared/brand-events/brand-events.service';
 import { getClientIp } from '../../../common/utils/client-ip.util';
+import { LaunchService } from '../../Brand-panel/drops/launch.service';
 
 /** What shoppers see of a brand's own panel data: its catalog, its drops, and the runway spotlight. */
 @ApiTags('Brands (App) — showcase')
@@ -22,7 +23,21 @@ export class BrandShowcaseController {
     private readonly store: BrandStoreService,
     private readonly events: BrandEventsService,
     private readonly follows: BrandFollowService,
+    private readonly launches: LaunchService,
   ) {}
+
+  @Get('launches/latest')
+  @ApiOperation({ summary: 'Launches of the last 30 days (newest first) and the next 30 (soonest first)' })
+  async latestLaunches() {
+    return { message: 'Latest launches fetched', data: await this.launches.latest() };
+  }
+
+  @Get('launches/:dropId')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: 'A launch page: countdown and teaser before launch, the collection after' })
+  async launch(@Param('dropId') dropId: string, @Req() req: any) {
+    return { message: 'Launch fetched', data: await this.launches.page(dropId, req.user?.userId) };
+  }
 
   @Get('directory')
   @UseGuards(OptionalAuthGuard)
@@ -41,12 +56,14 @@ export class BrandShowcaseController {
   @Get(':slug/store')
   @UseGuards(OptionalAuthGuard)
   @ApiOperation({ summary: "A brand's virtual store: profile, showcase, filters, new in and drops in one call" })
-  async storeHome(@Param('slug') slug: string, @Req() req: any) {
+  async storeHome(@Param('slug') slug: string, @Req() req: any, @Query('q') searched?: string) {
     const data = await this.store.store(slug, req.user?.userId);
     const [followers, following] = await Promise.all([this.follows.count(data.brand.id), this.follows.isFollowing(data.brand.id, req.user?.userId)]);
     (data.brand as any).followers = followers;
     (data.brand as any).following = following;
-    this.events.record({ brandId: data.brand.id, type: 'STORE_VIEW', userId: req.user?.userId, actor: req.user?.userId ?? getClientIp(req) });
+    // A search term is kept tidy and short: it's shown to the brand only in aggregate.
+    const query = typeof searched === 'string' ? searched.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 60) : '';
+    this.events.record({ brandId: data.brand.id, type: 'STORE_VIEW', userId: req.user?.userId, actor: req.user?.userId ?? getClientIp(req), ...(query.length >= 2 ? { query } : {}) });
     return { message: 'Store fetched', data };
   }
 
@@ -118,8 +135,8 @@ export class BrandShowcaseController {
   /** Plain link target for the Buy button: counts the click, then sends the shopper to the brand's store. */
   @Get('products/:productId/go')
   @ApiOperation({ summary: "Count a Buy tap and redirect to the brand's store page" })
-  async go(@Param('productId') productId: string, @Res() reply: any) {
-    const result = await this.showcase.click(productId);
+  async go(@Param('productId') productId: string, @Res() reply: any, @Query('ref') ref?: string) {
+    const result = await this.showcase.click(productId, typeof ref === 'string' ? ref.toUpperCase() : undefined);
     if (!result) throw new NotFoundException('Garment not found');
     // Sent on the raw reply: the global response wrapper would otherwise turn a redirect into JSON.
     reply.status(302).header('Location', result.buyUrl).send();
@@ -128,8 +145,8 @@ export class BrandShowcaseController {
   @Post('products/:productId/click')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'A shopper tapped Buy on a garment: counts the click and returns the store link' })
-  async click(@Param('productId') productId: string) {
-    const result = await this.showcase.click(productId);
+  async click(@Param('productId') productId: string, @Query('ref') ref?: string) {
+    const result = await this.showcase.click(productId, typeof ref === 'string' ? ref.toUpperCase() : undefined);
     if (!result) throw new NotFoundException('Garment not found');
     return { message: 'Click recorded', data: result };
   }

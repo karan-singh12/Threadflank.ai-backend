@@ -5,7 +5,7 @@ import { AuditLogService } from '../../../shared/audit/audit-log.service';
 import { buildPaginationMeta } from '../../../common/dto/pagination-query.dto';
 import { CreditsService } from './credits.service';
 import { markBrandPaymentPaid } from '../../Brand-panel/billing/brand-credits';
-import { checkoutSignatureValid, createRazorpayOrder, razorpayConfig, webhookSignatureValid } from './razorpay';
+import { checkoutSignatureValid, createRazorpayOrder, createSandboxOrder, isSandboxId, razorpayConfig, sandboxPaymentId, webhookSignatureValid } from './razorpay';
 import { AdjustCreditsDto, CreditPackDto, PaymentsFilterDto, UpdateBillingSettingsDto, VerifyPaymentDto } from './dto/billing.dto';
 
 /** Where the Razorpay dashboard should send webhooks (behind the API's /api prefix). */
@@ -43,8 +43,10 @@ export class PaymentsService {
             this.credits.settings(),
             this.prisma.creditPack.findMany({ where: { isActive: true }, orderBy: [{ order: 'asc' }, { pricePaise: 'asc' }] }),
         ]);
+        const config = razorpayConfig();
         return {
-            paymentsEnabled: razorpayConfig().enabled,
+            paymentsEnabled: config.open,
+            paymentsMode: config.mode,
             currency: settings.currency,
             freeCredits: settings.freeCredits,
             videoCost: settings.videoCost,
@@ -59,18 +61,20 @@ export class PaymentsService {
             freeCredits: settings.freeCredits,
             imageCost: 1,
             videoCost: settings.videoCost,
-            paymentsEnabled: razorpayConfig().enabled,
+            paymentsEnabled: razorpayConfig().open,
+            paymentsMode: razorpayConfig().mode,
         };
     }
 
     async createOrder(userId: string, packId: string) {
         const config = razorpayConfig();
-        if (!config.enabled) throw new ServiceUnavailableException('Payments are not available yet. Please check back soon.');
+        if (!config.open) throw new ServiceUnavailableException('Payments are not available yet. Please check back soon.');
         const pack = await this.prisma.creditPack.findFirst({ where: { id: packId, isActive: true } });
         if (!pack) throw new NotFoundException('That credit pack is no longer available.');
 
         let order;
-        try {
+        if (config.sandbox) order = createSandboxOrder(pack.pricePaise);
+        else try {
             order = await createRazorpayOrder({
                 amount: pack.pricePaise,
                 currency: 'INR',
@@ -86,15 +90,22 @@ export class PaymentsService {
         await this.prisma.payment.create({
             data: { userId, packId: pack.id, credits: pack.credits, amount: order.amount, currency: order.currency, providerOrderId: order.id },
         });
-        return { orderId: order.id, amount: order.amount, currency: order.currency, keyId: config.keyId, pack: toPublicPack(pack) };
+        return { orderId: order.id, amount: order.amount, currency: order.currency, keyId: config.keyId, sandbox: config.sandbox, pack: toPublicPack(pack) };
     }
 
-    /** Checkout's success callback. Credits the order (once) and returns the new balance. */
+    /**
+     * Checkout's success callback. Credits the order (once) and returns the new balance.
+     * A sandbox order has no signature to check: it is accepted only while sandbox mode is on,
+     * with a payment id made here.
+     */
     async verifyCheckout(userId: string, dto: VerifyPaymentDto) {
-        if (!checkoutSignatureValid(dto.orderId, dto.paymentId, dto.signature)) throw new BadRequestException('The payment couldn’t be verified.');
+        const sandbox = isSandboxId(dto.orderId);
+        if (sandbox ? !razorpayConfig().sandbox : !checkoutSignatureValid(dto.orderId, dto.paymentId, dto.signature)) {
+            throw new BadRequestException('The payment couldn’t be verified.');
+        }
         const payment = await this.prisma.payment.findUnique({ where: { providerOrderId: dto.orderId } });
         if (!payment || payment.userId !== userId) throw new NotFoundException('Payment not found.');
-        await this.markPaid(dto.orderId, dto.paymentId);
+        await this.markPaid(dto.orderId, sandbox ? sandboxPaymentId() : dto.paymentId);
         return { balance: await this.credits.balance(userId), credits: payment.credits };
     }
 
@@ -158,16 +169,32 @@ export class PaymentsService {
 
     async adminOverview() {
         const config = razorpayConfig();
-        const [settings, revenue, paidCount, pending] = await Promise.all([
+        // Sandbox purchases are counted apart, so test clicks never show up as revenue.
+        const real = { status: PaymentStatus.PAID, NOT: { providerOrderId: { startsWith: 'sandbox_' } } };
+        const [settings, revenue, paidCount, pending, sandboxPaid, brandRevenue, brandPaid] = await Promise.all([
             this.credits.settings(),
-            this.prisma.payment.aggregate({ where: { status: PaymentStatus.PAID }, _sum: { amount: true, credits: true } }),
-            this.prisma.payment.count({ where: { status: PaymentStatus.PAID } }),
+            this.prisma.payment.aggregate({ where: real, _sum: { amount: true, credits: true } }),
+            this.prisma.payment.count({ where: real }),
             this.prisma.payment.count({ where: { status: PaymentStatus.CREATED } }),
+            Promise.all([
+                this.prisma.payment.count({ where: { status: PaymentStatus.PAID, providerOrderId: { startsWith: 'sandbox_' } } }),
+                this.prisma.brandPayment.count({ where: { status: PaymentStatus.PAID, providerOrderId: { startsWith: 'sandbox_' } } }),
+            ]).then(([a, b]) => a + b),
+            this.prisma.brandPayment.aggregate({ where: real, _sum: { amount: true } }),
+            this.prisma.brandPayment.count({ where: real }),
         ]);
         return {
             settings,
-            razorpay: { keyConfigured: config.enabled, webhookConfigured: Boolean(config.webhookSecret), mode: config.mode, webhookPath: WEBHOOK_PATH },
-            stats: { revenue: (revenue._sum.amount ?? 0) / 100, creditsSold: revenue._sum.credits ?? 0, paidCount, pending },
+            razorpay: { keyConfigured: config.enabled, webhookConfigured: Boolean(config.webhookSecret), mode: config.mode, sandbox: config.sandbox, webhookPath: WEBHOOK_PATH },
+            stats: {
+                revenue: (revenue._sum.amount ?? 0) / 100,
+                creditsSold: revenue._sum.credits ?? 0,
+                paidCount,
+                pending,
+                brandRevenue: (brandRevenue._sum.amount ?? 0) / 100,
+                brandPaidCount: brandPaid,
+                sandboxPaidCount: sandboxPaid,
+            },
         };
     }
 
@@ -227,7 +254,26 @@ export class PaymentsService {
         const users = await this.prisma.user.findMany({ where: { id: { in: rows.map((r) => r.userId) } }, select: { id: true, email: true, username: true } });
         const byId = new Map(users.map((u) => [u.id, u]));
         return {
-            payments: rows.map((r) => ({ ...r, amount: r.amount / 100, packName: r.pack?.name ?? null, user: byId.get(r.userId) ?? null })),
+            payments: rows.map((r) => ({ ...r, amount: r.amount / 100, packName: r.pack?.name ?? null, user: byId.get(r.userId) ?? null, sandbox: isSandboxId(r.providerOrderId) })),
+            meta: buildPaginationMeta(total, page, limit),
+        };
+    }
+
+    /** Brands' purchases of plans and credit packs, newest first, for the admin billing page. */
+    async listBrandPayments(filter: PaymentsFilterDto) {
+        const page = filter.page ?? 1;
+        const limit = Math.min(filter.limit ?? 20, 100);
+        const q = filter.search?.trim();
+        const where: Prisma.BrandPaymentWhereInput = {
+            ...(filter.status ? { status: filter.status } : {}),
+            ...(q ? { brand: { OR: [{ name: { contains: q, mode: 'insensitive' } }, { slug: { contains: q, mode: 'insensitive' } }] } } : {}),
+        };
+        const [rows, total] = await Promise.all([
+            this.prisma.brandPayment.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, include: { brand: { select: { id: true, name: true, slug: true } } } }),
+            this.prisma.brandPayment.count({ where }),
+        ]);
+        return {
+            payments: rows.map((r) => ({ ...r, amount: r.amount / 100, sandbox: isSandboxId(r.providerOrderId) })),
             meta: buildPaginationMeta(total, page, limit),
         };
     }

@@ -55,7 +55,7 @@ describe('Flagship store needs an address', () => {
         update: jest.fn().mockResolvedValue({ id: 'b' }),
       },
     };
-    const auth: any = { toProfile: (x: any) => x, getProfile: jest.fn() };
+    const auth: any = { toProfile: (x: any) => x, withLiveNumbers: async (x: any) => x, getProfile: jest.fn() };
     return { svc: new BrandProfileService(prisma, auth), prisma };
   };
   it('rejects flagship with no address, accepts online-only or an address', async () => {

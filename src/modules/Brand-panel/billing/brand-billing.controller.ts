@@ -100,6 +100,12 @@ export class BrandBillingController {
   async payments(@CurrentBrand() brand: AuthenticatedBrand) {
     return { message: 'Payments fetched', data: await this.billing.history(brand.brandId) };
   }
+
+  @Get('payments/:id/invoice')
+  @ApiOperation({ summary: 'The GST invoice for one paid purchase' })
+  async invoice(@CurrentBrand() brand: AuthenticatedBrand, @Param('id') id: string) {
+    return { message: 'Invoice fetched', data: await this.billing.invoice(brand.brandId, id) };
+  }
 }
 
 @ApiTags('Admin Panel — Brand promo codes')

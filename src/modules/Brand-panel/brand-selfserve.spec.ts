@@ -11,6 +11,7 @@ function authSvc(prismaOver: any = {}) {
     brandAccount: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(1) },
     brandProduct: { count: jest.fn().mockResolvedValue(0) },
     brandDrop: { count: jest.fn().mockResolvedValue(0) },
+    creatorCollab: { count: jest.fn().mockResolvedValue(0) },
     brandRefreshToken: { updateMany: jest.fn() },
     brandAuthToken: { create: jest.fn() },
     // Inviting is checked against the plan; this brand is on Pro, so there is room.

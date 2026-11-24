@@ -68,6 +68,10 @@ export function markBrandPaymentPaid(prisma: PrismaService, orderId: string, pay
         await tx.brand.update({ where: { id: payment.brandId }, data: { plan: plan.id, planUntil: new Date(left + PLAN_DAYS * 86_400_000) } });
       }
       if (payment.couponCode) await tx.brandCoupon.updateMany({ where: { code: payment.couponCode }, data: { usedCount: { increment: 1 } } });
+      // A won runway slot paid through Checkout: mark it paid (only for the brand that won it).
+      if (payment.packId.startsWith('bid_')) {
+        await tx.bidSlot.updateMany({ where: { id: payment.packId.slice(4), winnerBrandId: payment.brandId }, data: { paid: true } });
+      }
     }
     return payment;
   });

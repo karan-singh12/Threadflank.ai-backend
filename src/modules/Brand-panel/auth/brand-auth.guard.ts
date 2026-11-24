@@ -1,5 +1,6 @@
 import { CanActivate, createParamDecorator, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthenticatedBrand, BrandJwtStrategy } from './brand-jwt.strategy';
+import { roleRefusal } from './brand-roles';
 
 /** Guards every /brand/* route except the public auth ones. Attaches the payload to `request.brand`. */
 @Injectable()
@@ -13,10 +14,9 @@ export class BrandAuthGuard implements CanActivate {
       throw new UnauthorizedException('Sign in to continue.');
     }
     const brand = await this.brandJwt.verifyAccessToken(token);
-    // A VIEWER is read-only: any request that could change data is refused here, for every route.
-    if (brand.role === 'VIEWER' && !['GET', 'HEAD', 'OPTIONS'].includes(String(request.method).toUpperCase())) {
-      throw new ForbiddenException('Your role is view-only. Ask the brand owner for more access.');
-    }
+    // Role limits are applied here, for every route (see brand-roles.ts).
+    const refusal = roleRefusal(brand.role, String(request.method), String(request.originalUrl ?? request.url ?? ''));
+    if (refusal) throw new ForbiddenException(refusal);
     request['brand'] = brand;
     return true;
   }

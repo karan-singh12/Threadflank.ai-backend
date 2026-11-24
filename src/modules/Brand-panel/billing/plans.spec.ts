@@ -2,12 +2,13 @@ import { activePlan, assertPlanRoom, findPlan, planFromPackId, PlanLimitExceptio
 
 const day = 86_400_000;
 
-function db(brand: { plan: string; planUntil: Date | null }, used: { garments?: number; drops?: number; team?: number } = {}) {
+function db(brand: { plan: string; planUntil: Date | null }, used: { garments?: number; drops?: number; team?: number; collabs?: number } = {}) {
   return {
     brand: { findUnique: jest.fn().mockResolvedValue(brand) },
     brandProduct: { count: jest.fn().mockResolvedValue(used.garments ?? 0) },
     brandDrop: { count: jest.fn().mockResolvedValue(used.drops ?? 0) },
     brandAccount: { count: jest.fn().mockResolvedValue(used.team ?? 1) },
+    creatorCollab: { count: jest.fn().mockResolvedValue(used.collabs ?? 0) },
   } as any;
 }
 
@@ -21,6 +22,15 @@ describe('activePlan', () => {
   });
   it('an unknown plan name counts as Free', () => {
     expect(activePlan({ plan: 'GOLD', planUntil: new Date(Date.now() + day) }).id).toBe('FREE');
+  });
+});
+
+describe('creator collabs', () => {
+  it('are a Pro feature', async () => {
+    await expect(assertPlanRoom(db({ plan: 'FREE', planUntil: null }), 'b', 'collabs')).rejects.toThrow(/Free plan allows 0 open creator collabs/);
+    const pro = { plan: 'PRO', planUntil: new Date(Date.now() + 86_400_000) };
+    await expect(assertPlanRoom(db(pro, { collabs: 24 }), 'b', 'collabs')).resolves.toBeUndefined();
+    await expect(assertPlanRoom(db(pro, { collabs: 25 }), 'b', 'collabs')).rejects.toThrow(PlanLimitException);
   });
 });
 

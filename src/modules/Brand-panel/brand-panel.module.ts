@@ -41,6 +41,28 @@ import { BrandBiddingService } from './bidding/brand-bidding.service';
 import { BrandDropsService } from './drops/brand-drops.service';
 import { BrandUploadService } from './upload/brand-upload.service';
 import { BrandWidgetService } from './widget/brand-widget.service';
+import { CatalogAiService } from './catalog/catalog-ai.service';
+import { StoreBuilderController } from './store/store-builder.controller';
+import { StoreBuilderService } from './store/store-builder.service';
+import { StoreLayoutService } from './store/store-layout.service';
+import { RankingService } from './ranking/ranking.service';
+import { LaunchService } from './drops/launch.service';
+import { CampaignsService } from './campaigns/campaigns.service';
+import { CommunityService } from './community/community.service';
+import { PromotionsService } from './promotions/promotions.service';
+import { BrandPromotionsController } from './promotions/promotions.controller';
+import { CreatorsService } from './creators/creators.service';
+import { BrandCreatorsController } from './creators/creators.controller';
+import { BrandCommunityController } from './community/community.controller';
+import { NotificationsModule } from '../User-panel/notifications/notifications.module';
+import { BrandCampaignsController, CampaignsAdminController } from './campaigns/campaigns.controller';
+import { BrandDashboardService } from './analytics/brand-dashboard.service';
+import { BrandInsightsService } from './analytics/brand-insights.service';
+import { VisionService } from '../../shared/vision/vision.service';
+import { BrandNotifyService } from './notify/brand-notify';
+import { StoreSyncService } from './catalog/store-sync.service';
+import { ContentLibraryService } from './ai-studio/library.service';
+import { ContentLibraryController } from './ai-studio/library.controller';
 
 @Module({
   imports: [
@@ -51,6 +73,7 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     MailerModule,
     SdkModule,
     AdminAuthModule,
+    NotificationsModule,
     // No default secret: BrandJwtStrategy always passes its own, so brand tokens never share the user secret.
     JwtModule.register({}),
   ],
@@ -69,6 +92,13 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandTaxonomyController,
     BrandBillingController,
     BrandCouponsAdminController,
+    StoreBuilderController,
+    BrandCampaignsController,
+    CampaignsAdminController,
+    BrandCommunityController,
+    BrandPromotionsController,
+    BrandCreatorsController,
+    ContentLibraryController,
   ],
   providers: [
     AppLogger,
@@ -88,6 +118,21 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandWidgetService,
     TaxonomyService,
     BrandBillingService,
+    VisionService,
+    CatalogAiService,
+    StoreLayoutService,
+    StoreBuilderService,
+    RankingService,
+    BrandDashboardService,
+    BrandInsightsService,
+    LaunchService,
+    CampaignsService,
+    CommunityService,
+    PromotionsService,
+    CreatorsService,
+    BrandNotifyService,
+    StoreSyncService,
+    ContentLibraryService,
   ],
   exports: [
     BrandAuthService,
@@ -101,6 +146,14 @@ import { BrandWidgetService } from './widget/brand-widget.service';
     BrandDropsService,
     BrandUploadService,
     TaxonomyService,
+    StoreLayoutService,
+    RankingService,
+    LaunchService,
+    CampaignsService,
+    CommunityService,
+    PromotionsService,
+    CreatorsService,
+    BrandBillingService,
   ],
 })
 export class BrandPanelModule {}

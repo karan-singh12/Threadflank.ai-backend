@@ -27,6 +27,8 @@ export class CatalogPageQueryDto {
   @IsOptional() @Transform(toBool) @IsBoolean() lowStock?: boolean;
   /** Pieces with no image, so cannot be tried on. */
   @IsOptional() @Transform(toBool) @IsBoolean() notReady?: boolean;
+  /** needs_work = the try-on photo check found problems; unchecked = has a photo that has not been checked yet. */
+  @IsOptional() @IsIn(['needs_work', 'unchecked']) photo?: 'needs_work' | 'unchecked';
   @IsOptional() @IsIn(CATALOG_SORTS as unknown as string[]) sort?: CatalogSort;
 }
 
@@ -35,6 +37,16 @@ export class ImportCatalogDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(BULK_MAX) items!: Record<string, unknown>[];
   /** When true, a row whose SKU already exists updates that piece instead of being skipped. */
   @IsOptional() @IsBoolean() updateExisting?: boolean;
+}
+
+/** Import or re-sync from a Shopify or WooCommerce store. */
+export class StoreSyncDto {
+  /** The store address: yourbrand.com, yourbrand.myshopify.com or a full https:// link. */
+  @IsString() @MaxLength(300) url!: string;
+  /** Used for pieces whose store type is not one of the admin categories. */
+  @IsString() @MaxLength(60) category!: string;
+  /** New pieces come in as drafts unless PUBLISHED is asked for. */
+  @IsOptional() @IsIn(['DRAFT', 'PUBLISHED']) status?: 'DRAFT' | 'PUBLISHED';
 }
 
 export class BulkCatalogDto {

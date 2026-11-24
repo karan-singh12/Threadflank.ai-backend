@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { BACKDROP_PRESET_IDS, FRAMING_PRESET_IDS, MODEL_PRESET_IDS, POSE_PRESET_IDS } from './model-presets';
+import { PHOTO_TOOL_IDS, type PhotoToolId } from './photo-tools';
 
 /**
  * One model shoot: whose garment, on which model, held how, against what.
@@ -43,4 +44,39 @@ export class CreateModelShotDto {
   @MaxLength(300)
   @IsOptional()
   direction?: string;
+}
+
+/** One photo tool run (see photo-tools.ts). */
+export class PhotoToolDto {
+  @ApiProperty({ enum: PHOTO_TOOL_IDS })
+  @IsIn(PHOTO_TOOL_IDS)
+  tool!: PhotoToolId;
+
+  @ApiPropertyOptional({ description: "One of the brand's garments; its first photo is used" })
+  @IsString()
+  @MaxLength(40)
+  @IsOptional()
+  garmentId?: string;
+
+  @ApiPropertyOptional({ description: 'A photo the brand uploaded instead' })
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  customImageUrl?: string;
+
+  @ApiPropertyOptional({ enum: BACKDROP_PRESET_IDS, description: 'Background swap and ad creative' })
+  @IsIn(BACKDROP_PRESET_IDS)
+  @IsOptional()
+  backdropId?: string;
+
+  @ApiPropertyOptional({ enum: ['square', 'story'], description: 'Ad creative only' })
+  @IsIn(['square', 'story'])
+  @IsOptional()
+  format?: 'square' | 'story';
+
+  @ApiPropertyOptional({ example: 'The Diwali Edit is here', description: 'Ad creative only: printed on the image' })
+  @IsString()
+  @MaxLength(60)
+  @IsOptional()
+  headline?: string;
 }

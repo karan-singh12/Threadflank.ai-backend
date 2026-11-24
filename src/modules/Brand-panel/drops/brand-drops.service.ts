@@ -16,6 +16,9 @@ export interface LaunchDropEntity {
   productsCount: number;
   skuCount?: number;
   countdownDays?: number;
+  teaserUrl?: string;
+  /** Live pieces in the drop's collection right now (filled in the brand's own list). */
+  livePieces?: number;
 }
 
 type Row = Prisma.BrandDropGetPayload<{ include: { _count: { select: { waitlist: true } } } }>;
@@ -37,6 +40,7 @@ const toEntity = (r: Row): LaunchDropEntity => {
     bannerUrl: r.bannerUrl,
     productsCount: r.productsCount,
     countdownDays: Math.max(0, Math.ceil(msLeft / 86_400_000)),
+    teaserUrl: r.teaserUrl ?? undefined,
   };
 };
 
@@ -53,7 +57,10 @@ export class BrandDropsService {
 
   async findAll(brandId: string): Promise<LaunchDropEntity[]> {
     const rows = await this.prisma.brandDrop.findMany({ where: { brandId }, orderBy: { launchDate: 'desc' }, include: WITH_COUNT });
-    return rows.map(toEntity);
+    // How many live pieces each drop's collection has, so the brand sees an empty launch before it happens.
+    const counts = await this.prisma.brandProduct.groupBy({ by: ['collection'], where: { brandId, status: 'PUBLISHED', collection: { not: null } }, _count: { _all: true } });
+    const byName = new Map(counts.map((c) => [(c.collection as string).toLowerCase(), c._count._all]));
+    return rows.map((r) => ({ ...toEntity(r), livePieces: byName.get(r.collectionName.toLowerCase()) ?? 0 }));
   }
 
   count(brandId: string) {
@@ -72,6 +79,7 @@ export class BrandDropsService {
         launchDate: new Date(dto.launchDate),
         bannerUrl: dto.bannerUrl ?? '',
         productsCount: dto.productsCount || 1,
+        teaserUrl: dto.teaserUrl?.trim() || null,
       },
       include: WITH_COUNT,
     });
@@ -82,10 +90,14 @@ export class BrandDropsService {
     const existing = await this.prisma.brandDrop.findFirst({ where: { id, brandId } });
     if (!existing) throw new NotFoundException('Drop not found.');
     if (dto.launchDate !== undefined) this.assertNotPast(dto.launchDate);
-    const { launchDate, ...rest } = dto;
+    const { launchDate, teaserUrl, ...rest } = dto;
     const row = await this.prisma.brandDrop.update({
       where: { id },
-      data: { ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)), ...(launchDate ? { launchDate: new Date(launchDate) } : {}) },
+      data: {
+        ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)),
+        ...(launchDate ? { launchDate: new Date(launchDate) } : {}),
+        ...(teaserUrl !== undefined ? { teaserUrl: teaserUrl.trim() || null } : {}),
+      },
       include: WITH_COUNT,
     });
     return toEntity(row);

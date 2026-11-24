@@ -2,7 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 export type PlanId = 'FREE' | 'GROWTH' | 'PRO';
-export type LimitKey = 'garments' | 'drops' | 'team';
+export type LimitKey = 'garments' | 'drops' | 'team' | 'collabs';
 
 export interface Plan {
   id: PlanId;
@@ -17,9 +17,9 @@ export interface Plan {
 
 /** What each plan allows. Change numbers here and nowhere else. */
 export const PLANS: Plan[] = [
-  { id: 'FREE', name: 'Free', price: 0, credits: 0, limits: { garments: 15, drops: 1, team: 1 }, blurb: 'Try ThreadFlank with a small catalog' },
-  { id: 'GROWTH', name: 'Growth', price: 999, credits: 100, limits: { garments: 150, drops: 5, team: 3 }, blurb: 'For a growing brand' },
-  { id: 'PRO', name: 'Pro', price: 2999, credits: 400, limits: { garments: 1000, drops: 25, team: 10 }, blurb: 'For a full catalog and a team' },
+  { id: 'FREE', name: 'Free', price: 0, credits: 0, limits: { garments: 15, drops: 1, team: 1, collabs: 0 }, blurb: 'Try ThreadFlank with a small catalog' },
+  { id: 'GROWTH', name: 'Growth', price: 999, credits: 100, limits: { garments: 150, drops: 5, team: 3, collabs: 0 }, blurb: 'For a growing brand' },
+  { id: 'PRO', name: 'Pro', price: 2999, credits: 400, limits: { garments: 1000, drops: 25, team: 10, collabs: 25 }, blurb: 'For a full catalog and a team' },
 ];
 
 export const PLAN_DAYS = 30;
@@ -30,7 +30,7 @@ export const findPlan = (id: string) => PLANS.find((p) => p.id === id.toUpperCas
 export const planPackId = (id: PlanId) => PLAN_PREFIX + id.toLowerCase();
 export const planFromPackId = (packId: string) => (packId.startsWith(PLAN_PREFIX) ? findPlan(packId.slice(PLAN_PREFIX.length)) : undefined);
 
-const LABEL: Record<LimitKey, string> = { garments: 'pieces in your catalog', drops: 'launches at a time', team: 'team members' };
+const LABEL: Record<LimitKey, string> = { garments: 'pieces in your catalog', drops: 'launches at a time', team: 'team members', collabs: 'open creator collabs' };
 
 /** 402 with the plan and limit, so the panel can point the owner at Billing. */
 export class PlanLimitException extends HttpException {
@@ -52,14 +52,15 @@ export function activePlan(brand: { plan: string; planUntil: Date | null }): Pla
   return PLANS[0];
 }
 
-/** How much of each limit a brand is using. Launches count while upcoming or within a week of going live. */
+/** How much of each limit a brand is using. Launches count while upcoming or within a week of going live; collabs while pending or accepted. */
 export async function planUsage(prisma: PrismaService, brandId: string): Promise<Record<LimitKey, number>> {
-  const [garments, drops, team] = await Promise.all([
+  const [garments, drops, team, collabs] = await Promise.all([
     prisma.brandProduct.count({ where: { brandId } }),
     prisma.brandDrop.count({ where: { brandId, launchDate: { gte: new Date(Date.now() - 7 * 86_400_000) } } }),
     prisma.brandAccount.count({ where: { brandId } }),
+    prisma.creatorCollab.count({ where: { brandId, status: { in: ['PENDING', 'ACCEPTED'] } } }),
   ]);
-  return { garments, drops, team };
+  return { garments, drops, team, collabs };
 }
 
 export async function brandPlan(prisma: PrismaService, brandId: string) {

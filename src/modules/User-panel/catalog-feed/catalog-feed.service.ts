@@ -6,8 +6,9 @@ import { APP_CONSTANTS } from '../../../common/constants/app.constant';
 import { buildPaginationMeta } from '../../../common/dto/pagination-query.dto';
 import { decodeCursor, encodeCursor, sliceByLimit } from '../../../common/pagination/cursor';
 import { FeedQueryDto } from './feed-query.dto';
+import { LOW_STOCK_AT } from '../../Brand-panel/catalog/catalog-variants';
 
-type CommentRow = { id: string; productId: string; userId: string; content: string; createdAt: Date };
+type CommentRow = { id: string; productId: string; userId: string; content: string; createdAt: Date; brandReply?: string | null };
 type CommentAuthor = { id: string; username: string; avatar: string | null };
 
 /** What the feed needs per piece: its brand, counts and the two newest comments. */
@@ -15,6 +16,7 @@ const FEED_INCLUDE = {
   brand: { select: { id: true, name: true, slug: true, logoUrl: true, isVerified: true } },
   _count: { select: { likes: true, comments: true } },
   comments: { take: 2, orderBy: { createdAt: 'desc' as const } },
+  variants: { orderBy: { sortOrder: 'asc' as const } },
 } satisfies Prisma.BrandProductInclude;
 
 /** Only live pieces of approved brands are ever shown to shoppers. */
@@ -26,6 +28,8 @@ const withAuthor = (c: CommentRow, authors: Map<string, CommentAuthor>) => ({
   postId: c.productId,
   userId: c.userId,
   content: c.content,
+  /** The brand's answer, when it has replied. */
+  brandReply: c.brandReply ?? null,
   createdAt: c.createdAt,
   user: authors.get(c.userId) ?? { id: c.userId, username: 'member', avatar: null },
 });
@@ -38,8 +42,30 @@ function occasionFor(category?: string | null) {
   return 'casual';
 }
 
-/** Sizes and colours become the variant chips the app already knows how to show; none means no chips. */
-function variantsOf(p: { id: string; title: string; price: number; stock: number; sizes: string[]; colors: string[]; images: string[] }) {
+/** A stock count is shared with shoppers only when it is low ("Only 2 left"); healthy stock stays the brand's business. */
+const shownCount = (n: number) => (n > 0 && n <= LOW_STOCK_AT ? n : null);
+
+type VariantRow = { id: string; size: string; color: string; colorHex: string | null; price: number | null; stock: number };
+
+/**
+ * The variant chips the app already knows how to show. A piece with real variants shows them, each with
+ * its own stock; otherwise its sizes and colours are combined, all sharing the piece's stock.
+ */
+function variantsOf(p: { id: string; title: string; price: number; stock: number; sizes: string[]; colors: string[]; images: string[]; variants?: VariantRow[] }) {
+  if (p.variants?.length) {
+    return p.variants.slice(0, 48).map((v) => ({
+      id: v.id,
+      productName: p.title,
+      size: v.size,
+      color: v.color,
+      colorHex: v.colorHex,
+      price: Math.round(v.price ?? p.price) || null,
+      inStock: v.stock > 0,
+      stockCount: shownCount(v.stock),
+      productUrl: null,
+      imageUrl: p.images[0] ?? null,
+    }));
+  }
   const sizes = p.sizes.length ? p.sizes : [''];
   const colors = p.colors.length ? p.colors : [''];
   if (p.sizes.length === 0 && p.colors.length === 0) return [];
@@ -47,7 +73,7 @@ function variantsOf(p: { id: string; title: string; price: number; stock: number
   for (const color of colors) {
     for (const size of sizes) {
       if (out.length >= 24) break;
-      out.push({ id: `v_${p.id}_${out.length}`, productName: p.title, size, color, colorHex: null, price: p.price > 0 ? Math.round(p.price) : null, inStock: p.stock > 0, stockCount: p.stock, productUrl: null, imageUrl: p.images[0] ?? null });
+      out.push({ id: `v_${p.id}_${out.length}`, productName: p.title, size, color, colorHex: null, price: p.price > 0 ? Math.round(p.price) : null, inStock: p.stock > 0, stockCount: shownCount(p.stock), productUrl: null, imageUrl: p.images[0] ?? null });
     }
   }
   return out;
@@ -100,6 +126,9 @@ export class CatalogFeedService {
       updatedAt: p.updatedAt,
       brand: rest.brand,
       variants: variantsOf(p),
+      sizeChart: p.sizeChart ?? null,
+      fitNotes: p.fitNotes ?? null,
+      fabric: p.fabric ?? null,
       // The Buy button goes through /brands/products/:id/go so the brand sees the click.
       productId: p.id,
       hasBuyLink: p.buyUrl.trim().length > 0,

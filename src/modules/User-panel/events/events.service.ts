@@ -4,6 +4,7 @@ import { PrismaService } from "../../../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { TwinCircleService, USER_SUMMARY } from "../twin-circle/twin-circle.service";
 import { SdkService } from "../../../sdk/sdk.service";
+import { WITH_COUNTS, toPublicProduct } from "../../Brand-panel/catalog/brand-catalog.service";
 
 export type EventInput = {
   circleId?: string;
@@ -294,12 +295,46 @@ export class EventsService {
     const plan = await this.prisma.eventOutfitPlan.findFirst({ where: { id: planId, eventId } });
     if (!plan) throw new NotFoundException("Plan not found");
     if (plan.userId !== userId) throw new ForbiddenException("Suggestions use your own wardrobe, so they're only for your plan");
-    return this.sdk.runOccasionPlanner(userId, {
+    const [plan2, brandPicks] = await Promise.all([this.sdk.runOccasionPlanner(userId, {
       eventType: event.eventType || "Event",
       dressCode: event.dressCode ?? undefined,
       location: event.location ?? undefined,
       budget: event.budget ?? undefined,
       notes: [event.title, event.notes].filter(Boolean).join(". "),
+    }), this.brandPicks(event.eventType || event.title)]);
+    void this.recordGaps(event.eventType || "Event", plan2.outfits);
+    return { ...plan2, brandPicks };
+  }
+
+  /**
+   * What the planner said is missing, kept for brands' wardrobe-gap insight. Only the occasion and the
+   * item text are stored, never who asked, so it can't be traced back to a shopper. Never throws.
+   */
+  private async recordGaps(occasion: string, outfits: unknown) {
+    try {
+      const list = (outfits as { outfits?: { missing?: { item?: unknown }[] }[] } | null)?.outfits ?? [];
+      const items = [...new Set(list.flatMap((o) => (o.missing ?? []).map((m) => (typeof m.item === "string" ? m.item.trim().toLowerCase().slice(0, 60) : ""))).filter(Boolean))].slice(0, 10);
+      if (items.length) await this.prisma.plannerGap.createMany({ data: items.map((item) => ({ occasion: occasion.trim().slice(0, 60), item })) });
+    } catch {
+      /* insight data must never break the planner */
+    }
+  }
+
+  /**
+   * Live brand pieces tagged for this occasion, most tried-on first: what brands tag in their catalog
+   * shows up here, next to the ideas from the shopper's own wardrobe.
+   */
+  private async brandPicks(eventType: string) {
+    const occasions = await this.prisma.discoverCategory.findMany({ where: { kind: "OCCASION", isActive: true }, select: { name: true } });
+    const t = eventType.toLowerCase();
+    const hit = occasions.find((o) => t.includes(o.name.toLowerCase())) ?? occasions.find((o) => o.name.toLowerCase().includes(t) && t.length >= 4);
+    if (!hit) return null;
+    const rows = await this.prisma.brandProduct.findMany({
+      where: { status: "PUBLISHED", occasions: { has: hit.name }, brand: { isDeleted: false, status: "ACTIVE" } },
+      orderBy: [{ drapesCount: "desc" }, { createdAt: "desc" }],
+      take: 8,
+      include: { ...WITH_COUNTS, brand: { select: { name: true, slug: true } } },
     });
+    return { occasion: hit.name, pieces: rows.map((r) => ({ ...toPublicProduct(r), brand: { name: r.brand.name, slug: r.brand.slug } })) };
   }
 }

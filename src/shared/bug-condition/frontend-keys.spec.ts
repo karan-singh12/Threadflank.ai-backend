@@ -23,8 +23,10 @@ import * as path from "path";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
-// backend/src/shared/bug-condition/ -> go up 4 levels -> repo root -> frontend/src
-const FRONTEND_SRC = path.resolve(__dirname, "../../../../frontend/src");
+// Backend/src/shared/bug-condition/ -> up 4 levels -> the workspace root -> the shopper web app.
+// The panels live in separate repos, so when the backend is checked out alone there is nothing to scan.
+const FRONTEND_SRC = path.resolve(__dirname, "../../../../User-Panel/src");
+const HAS_FRONTEND = fs.existsSync(FRONTEND_SRC);
 const TWIN_SERVICE = path.resolve(
     __dirname,
     "../../modules/User-panel/twin/twin.service.ts"
@@ -65,7 +67,7 @@ const FORBIDDEN_FETCH_HOSTS = [
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
 
-describe("Bug Condition: Provider keys and AI fetches must not exist in frontend", () => {
+(HAS_FRONTEND ? describe : describe.skip)("Bug Condition: Provider keys and AI fetches must not exist in frontend", () => {
     let frontendFiles: string[];
 
     beforeAll(() => {

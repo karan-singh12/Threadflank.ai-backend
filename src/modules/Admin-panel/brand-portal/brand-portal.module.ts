@@ -9,10 +9,12 @@ import { BrandPanelModule } from '../../Brand-panel/brand-panel.module';
 import { BrandPortalController } from './brand-portal.controller';
 import { BrandPortalService } from './brand-portal.service';
 import { BrandBiddingAdminController } from './brand-bidding-admin.controller';
+import { BrandCatalogAdminController, BrandManagementController } from './brand-management.controller';
+import { BrandManagementService } from './brand-management.service';
 
 @Module({
   imports: [PrismaModule, AdminAuthModule, AuditLogModule, MailerModule, BrandsModule, BrandPanelModule],
-  controllers: [BrandPortalController, BrandBiddingAdminController],
-  providers: [AppLogger, BrandPortalService],
+  controllers: [BrandPortalController, BrandBiddingAdminController, BrandManagementController, BrandCatalogAdminController],
+  providers: [AppLogger, BrandPortalService, BrandManagementService],
 })
 export class BrandPortalModule {}

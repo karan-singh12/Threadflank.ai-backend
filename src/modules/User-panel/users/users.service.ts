@@ -371,12 +371,11 @@ export class UsersService {
       take: APP_CONSTANTS.friends.suggestionsLimit,
     });
 
-    return suggestions.map((sug) => ({
-      id: sug.id,
-      name: sug.username || sug.email.split("@")[0],
-      avatar: sug.avatar,
-      detail: sug.bio || "NexusChat Member",
-      added: false,
-    }));
+    // Returned as-is, in the same shape as every other friend this API hands out. The web panel,
+    // the phone app and the brand panel all render a suggestion as a FriendUser and send the
+    // request by its username or email. They used to get `{ name, detail }` here instead, which
+    // none of them reads: the web panel crashed on the Suggested tab, and with no username or email
+    // to send, a suggested person could not be added from any client.
+    return suggestions;
   }
 }

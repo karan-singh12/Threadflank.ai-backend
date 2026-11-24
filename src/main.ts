@@ -140,7 +140,8 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length ? corsOrigins : "*",
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-    allowedHeaders: "Content-Type, Accept, Authorization",
+    // x-widget-*: the embeddable try-on (on brands' stores) identifies itself with these on /widget/tryon.
+    allowedHeaders: "Content-Type, Accept, Authorization, X-Widget-Key, X-Widget-Origin",
     maxAge: 86400,
   });
 

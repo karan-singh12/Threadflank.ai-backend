@@ -3,7 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BrandAuthGuard, CurrentBrand } from '../../auth/brand-auth.guard';
 import { AuthenticatedBrand } from '../../auth/brand-jwt.strategy';
 import { BrandModelService } from './brand-model.service';
-import { CreateModelShotDto } from './brand-model.dto';
+import { CreateModelShotDto, PhotoToolDto } from './brand-model.dto';
+import { PHOTO_TOOL_COST, PHOTO_TOOLS } from './photo-tools';
 
 @ApiTags('Brand Panel — AI Studio (model shoot)')
 @ApiBearerAuth()
@@ -29,6 +30,19 @@ export class BrandModelController {
   @ApiOperation({ summary: 'Put a garment on a model (takes credits; refunded if the render fails)' })
   async create(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: CreateModelShotDto) {
     return { message: 'Model shot ready', data: await this.shoots.create(brand.brandId, dto) };
+  }
+
+  @Get('tools')
+  @ApiOperation({ summary: 'The photo tools (background swap, ghost mannequin, ad creative) and what each costs' })
+  tools() {
+    return { message: 'Photo tools', data: { tools: PHOTO_TOOLS, cost: PHOTO_TOOL_COST, available: this.shoots.status().available } };
+  }
+
+  @Post('tools')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Run a photo tool on a garment photo (takes credits; refunded if the render fails)' })
+  async tool(@CurrentBrand() brand: AuthenticatedBrand, @Body() dto: PhotoToolDto) {
+    return { message: 'Photo ready', data: await this.shoots.edit(brand.brandId, dto) };
   }
 
   @Get('shoots')

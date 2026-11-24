@@ -1,7 +1,7 @@
 import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { checkoutSignatureValid, createRazorpayOrder, razorpayConfig } from '../../User-panel/payments/razorpay';
+import { checkoutSignatureValid, createRazorpayOrder, createSandboxOrder, isSandboxId, razorpayConfig, sandboxPaymentId } from '../../User-panel/payments/razorpay';
 import { BRAND_PACKS, findPack, markBrandPaymentPaid } from './brand-credits';
 import { activePlan, PLAN_DAYS, PLANS, planFromPackId, planPackId, planUsage } from './plans';
 
@@ -23,14 +23,17 @@ export class BrandBillingService {
   constructor(private readonly prisma: PrismaService) {}
 
   async overview(brandId: string) {
-    const brand = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { socialLinks: true, gstin: true, plan: true, planUntil: true } });
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { socialLinks: true, gstin: true, gstVerifiedAt: true, plan: true, planUntil: true } });
     if (!brand) throw new NotFoundException('Brand not found.');
     const credits = ((brand.socialLinks as Record<string, unknown> | null)?.aiCredits as number | undefined) ?? 0;
     const current = activePlan(brand);
+    const config = razorpayConfig();
     return {
-      paymentsEnabled: razorpayConfig().enabled,
+      paymentsEnabled: config.open,
+      paymentsMode: config.mode,
       credits,
       gstin: brand.gstin ?? '',
+      gstVerified: Boolean(brand.gstin && brand.gstVerifiedAt),
       gstNote: 'Prices include GST.',
       packs: BRAND_PACKS.map(toPublicPack),
       plan: { id: current.id, name: current.name, until: current.id === 'FREE' ? null : brand.planUntil?.toISOString() ?? null, limits: current.limits, usage: await planUsage(this.prisma, brandId) },
@@ -72,16 +75,29 @@ export class BrandBillingService {
     return { packId: pack.id, code: c?.code ?? null, percentOff: c?.percentOff ?? 0, bonusCredits: c?.bonusCredits ?? 0, price: amount / 100, originalPrice: pack.pricePaise / 100, credits };
   }
 
+  /**
+   * A runway slot this brand won and hasn't paid for, priced at its winning bid. Promo codes don't
+   * apply to auctions: the bid is the price the brand chose.
+   */
+  private async bidItem(brandId: string, packId: string) {
+    const slotId = packId.slice(BID_PREFIX.length);
+    const slot = await this.prisma.bidSlot.findFirst({ where: { id: slotId, winnerBrandId: brandId, paid: false, winningAmount: { not: null }, cycle: { status: 'CLOSED' } } });
+    if (!slot) return undefined;
+    return { id: packId, packId, pricePaise: slot.winningAmount! * 100, credits: 0, label: `Runway slot #${slot.rank}: ${slot.title}`, bid: true };
+  }
+
   async createOrder(brandId: string, packId: string, code?: string) {
     const config = razorpayConfig();
-    if (!config.enabled) throw new ServiceUnavailableException('Payments are not available yet. Please check back soon.');
-    const pack = this.item(packId);
-    if (!pack) throw new NotFoundException('That pack is not available.');
-    const c = await this.coupon(code);
+    if (!config.open) throw new ServiceUnavailableException('Payments are not available yet. Please check back soon.');
+    const isBid = packId.startsWith(BID_PREFIX);
+    const pack = isBid ? await this.bidItem(brandId, packId) : this.item(packId);
+    if (!pack) throw new NotFoundException(isBid ? 'That slot is already paid for, or it isn’t yours.' : 'That pack is not available.');
+    const c = isBid ? null : await this.coupon(code);
     const { amount, credits } = this.price(pack, c);
 
     let order;
-    try {
+    if (config.sandbox) order = createSandboxOrder(amount);
+    else try {
       order = await createRazorpayOrder({
         amount,
         currency: 'INR',
@@ -95,15 +111,22 @@ export class BrandBillingService {
     await this.prisma.brandPayment.create({
       data: { brandId, packId: pack.packId, credits, amount: order.amount, currency: order.currency, providerOrderId: order.id, couponCode: c?.code ?? null },
     });
-    return { orderId: order.id, amount: order.amount, currency: order.currency, keyId: config.keyId, pack: { id: pack.id, name: pack.label, credits }, credits };
+    return { orderId: order.id, amount: order.amount, currency: order.currency, keyId: config.keyId, sandbox: config.sandbox, pack: { id: pack.id, name: pack.label, credits }, credits };
   }
 
-  /** Checkout's success callback. Credits the order (once) and returns the new balance. */
+  /**
+   * Checkout's success callback. Credits the order (once) and returns the new balance.
+   * A sandbox order has no Razorpay signature: it is confirmed only while sandbox mode is still on,
+   * and the payment id is made here rather than taken from the request.
+   */
   async verify(brandId: string, dto: { orderId: string; paymentId: string; signature: string }) {
-    if (!checkoutSignatureValid(dto.orderId, dto.paymentId, dto.signature)) throw new BadRequestException('The payment couldn’t be verified.');
+    const sandbox = isSandboxId(dto.orderId);
+    if (sandbox ? !razorpayConfig().sandbox : !checkoutSignatureValid(dto.orderId, dto.paymentId, dto.signature)) {
+      throw new BadRequestException('The payment couldn’t be verified.');
+    }
     const payment = await this.prisma.brandPayment.findUnique({ where: { providerOrderId: dto.orderId } });
     if (!payment || payment.brandId !== brandId) throw new NotFoundException('Payment not found.');
-    await markBrandPaymentPaid(this.prisma, dto.orderId, dto.paymentId);
+    await markBrandPaymentPaid(this.prisma, dto.orderId, sandbox ? sandboxPaymentId() : dto.paymentId);
     const after = await this.overview(brandId);
     return { credits: payment.credits, balance: after.credits, plan: after.plan };
   }
@@ -112,14 +135,31 @@ export class BrandBillingService {
     const rows = await this.prisma.brandPayment.findMany({ where: { brandId }, orderBy: { createdAt: 'desc' }, take: 50 });
     return rows.map((p) => ({
       id: p.id,
-      pack: planFromPackId(p.packId) ? planFromPackId(p.packId)!.name + ' plan' : findPack(p.packId)?.name ?? p.packId,
+      pack: p.packId.startsWith(BID_PREFIX) ? 'Runway slot' : planFromPackId(p.packId) ? planFromPackId(p.packId)!.name + ' plan' : findPack(p.packId)?.name ?? p.packId,
       credits: p.credits,
       amount: p.amount / 100,
       coupon: p.couponCode,
       status: p.status,
+      sandbox: isSandboxId(p.providerOrderId),
+      invoiceNo: p.status === PaymentStatus.PAID ? invoiceNumber(p) : null,
       paidAt: p.paidAt?.toISOString() ?? null,
       createdAt: p.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * A tax invoice for one paid purchase. Prices include 18% GST, so the taxable value is worked back
+   * from the total. A buyer GSTIN from the seller's state splits the tax into CGST and SGST; any other
+   * state, or no GSTIN on file, is shown as IGST. A sandbox purchase is marked as a test document.
+   */
+  async invoice(brandId: string, paymentId: string) {
+    const p = await this.prisma.brandPayment.findFirst({
+      where: { id: paymentId, brandId },
+      include: { brand: { select: { name: true, gstin: true, gstVerifiedAt: true } } },
+    });
+    if (!p) throw new NotFoundException('Payment not found.');
+    if (p.status !== PaymentStatus.PAID || !p.paidAt) throw new BadRequestException('An invoice is made once the payment has gone through.');
+    return buildInvoice(p);
   }
 
   /** Razorpay says an order failed: keep the record so the history is honest. */
@@ -150,6 +190,76 @@ export class BrandBillingService {
     if (!count) throw new NotFoundException('Code not found.');
     return { id, isActive };
   }
+}
+
+export const GST_RATE = 18;
+
+/** Paying for a won runway slot: the order's packId is "bid_<slotId>". */
+export const BID_PREFIX = 'bid_';
+
+/** Who the invoice is from. Set from the environment once the company details are final. */
+const seller = () => ({
+  name: process.env.INVOICE_SELLER_NAME?.trim() || 'Threadflank',
+  address: process.env.INVOICE_SELLER_ADDRESS?.trim() || 'India',
+  gstin: process.env.INVOICE_SELLER_GSTIN?.trim() || null,
+  /** First two digits of a GSTIN: the state. 08 is Rajasthan. */
+  stateCode: process.env.INVOICE_SELLER_STATE_CODE?.trim() || '08',
+});
+
+/** TF-202611-1A2B3C4D: the month it was paid plus the end of the row id, so it is stable and unique. */
+export function invoiceNumber(p: { id: string; paidAt: Date | null; createdAt: Date }) {
+  const d = p.paidAt ?? p.createdAt;
+  return `TF-${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}-${p.id.slice(-8).toUpperCase()}`;
+}
+
+type InvoiceSource = {
+  id: string;
+  packId: string;
+  credits: number;
+  amount: number;
+  currency: string;
+  couponCode: string | null;
+  providerOrderId: string;
+  providerPaymentId: string | null;
+  paidAt: Date | null;
+  createdAt: Date;
+  brand: { name: string; gstin: string | null; gstVerifiedAt: Date | null };
+};
+
+/** Pure, so the tax split can be tested without a database. Amounts in rupees. */
+export function buildInvoice(p: InvoiceSource) {
+  const from = seller();
+  const total = p.amount;
+  const taxable = Math.round((total * 100) / (100 + GST_RATE));
+  const tax = total - taxable;
+  const intraState = p.brand.gstin?.slice(0, 2) === from.stateCode;
+  const plan = planFromPackId(p.packId);
+  return {
+    invoiceNo: invoiceNumber(p),
+    sandbox: isSandboxId(p.providerOrderId),
+    issuedAt: (p.paidAt ?? p.createdAt).toISOString(),
+    seller: from,
+    buyer: { name: p.brand.name, gstin: p.brand.gstin ?? null, gstVerified: Boolean(p.brand.gstin && p.brand.gstVerifiedAt) },
+    line: {
+      description: p.packId.startsWith(BID_PREFIX)
+        ? 'Sponsored runway placement (won at auction)'
+        : plan
+          ? `${plan.name} plan · ${PLAN_DAYS} days · ${p.credits} AI credits`
+          : `${findPack(p.packId)?.name ?? p.packId} pack · ${p.credits} AI credits`,
+      /** SAC for online information and database services. */
+      sac: '998431',
+      quantity: 1,
+    },
+    coupon: p.couponCode,
+    currency: p.currency,
+    amounts: {
+      taxable: taxable / 100,
+      rate: GST_RATE,
+      ...(intraState ? { cgst: Math.floor(tax / 2) / 100, sgst: (tax - Math.floor(tax / 2)) / 100 } : { igst: tax / 100 }),
+      total: total / 100,
+    },
+    paymentRef: p.providerPaymentId,
+  };
 }
 
 /** Only the owner spends the brand's money. */

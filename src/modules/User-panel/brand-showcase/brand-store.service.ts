@@ -7,6 +7,8 @@ import { PUBLIC_BRAND_SELECT, publicSocialLinks, toPublicBrand } from '../../Adm
 import { StoreCatalogQueryDto, type StoreSort } from './brand-store.dto';
 import { TtlCache } from '../../../common/cache/ttl-cache';
 import { decodeCursor as decode, encodeCursor, sliceByLimit } from '../../../common/pagination/cursor';
+import { StoreLayoutService } from '../../Brand-panel/store/store-layout.service';
+import { readLayout } from '../../Brand-panel/store/store-layout';
 
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 48;
@@ -72,10 +74,19 @@ export class BrandStoreService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly drops: BrandDropsService,
+    private readonly layouts: StoreLayoutService,
   ) {}
 
+  /**
+   * A live brand by its store URL. A URL the brand has since changed still finds it (the brand keeps
+   * its last few), and the response carries the current slug so the app can switch to it.
+   */
   private async liveBrand(slug: string) {
-    const brand = await this.prisma.brand.findFirst({ where: { slug, isDeleted: false, status: 'ACTIVE' }, select: { ...PUBLIC_BRAND_SELECT, createdAt: true, gstin: true } });
+    const select = { ...PUBLIC_BRAND_SELECT, createdAt: true, gstin: true, gstVerifiedAt: true, storeLayout: true } as const;
+    const live = { isDeleted: false, status: 'ACTIVE' as const };
+    const brand =
+      (await this.prisma.brand.findFirst({ where: { slug, ...live }, select })) ??
+      (await this.prisma.brand.findFirst({ where: { previousSlugs: { has: slug }, ...live }, select }));
     if (!brand) throw new NotFoundException('Brand not found');
     return brand;
   }
@@ -132,6 +143,10 @@ export class BrandStoreService {
       this.drops.listPublic(brand.id, userId),
     ]);
 
+    // The brand's own arrangement, when it has published one. Empty sections are left out for shoppers.
+    const published = readLayout(brand.storeLayout);
+    const layout = published ? await this.layouts.resolve(brand.id, published, { userId }) : null;
+
     // No featured pieces yet: the showcase shows what is newest, and says so.
     const isFallback = featured.length === 0;
     const [showcase, newIn] = await Promise.all([this.withViewer(isFallback ? newest.slice(0, 6) : featured, userId), this.withViewer(newest, userId)]);
@@ -150,6 +165,8 @@ export class BrandStoreService {
         category: brand.category ?? '',
         isVerified: brand.isVerified,
         gstRegistered: Boolean(brand.gstin),
+        /** Staff checked the GSTIN on the GST portal. */
+        gstVerified: Boolean(brand.gstin && brand.gstVerifiedAt),
         websiteUrl: brand.websiteUrl || text(social.website),
         themeAccent: text(social.themeAccent),
         announcementText: text(social.announcementText),
@@ -163,6 +180,8 @@ export class BrandStoreService {
       showcase: { pieces: showcase, isFallback },
       newIn,
       drops,
+      /** Null until the brand publishes a layout in the Store Builder; the app then shows its default page. */
+      layout: layout ? { sections: layout.sections.filter((x) => !x.empty), coverVideo: layout.coverVideo ?? null } : null,
     };
   }
 
@@ -192,6 +211,11 @@ export class BrandStoreService {
     const last = pageRows[pageRows.length - 1];
     const nextCursor = more && last ? encodeCursor({ id: last.id, c: last.createdAt.toISOString(), p: last.price, f: last.featured }) : null;
 
-    return { brand: toPublicBrand(brand), products: await this.withViewer(pageRows, userId), nextCursor, total };
+    // The row carries fields that are for this service only; shoppers get the public ones.
+    const { gstin: _gstin, createdAt: _created, storeLayout: _layout, ...pub } = brand;
+    void _gstin;
+    void _created;
+    void _layout;
+    return { brand: toPublicBrand(pub), products: await this.withViewer(pageRows, userId), nextCursor, total };
   }
 }

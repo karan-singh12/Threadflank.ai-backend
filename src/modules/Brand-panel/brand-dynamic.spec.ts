@@ -51,7 +51,7 @@ describe('catalog is scoped to the brand and reports duplicate SKUs', () => {
   });
   it('turns a unique-constraint error into a clear conflict', async () => {
     const err = new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' });
-    const prisma: any = { brand: { findUnique: jest.fn().mockResolvedValue(null) }, brandDrop: { count: jest.fn().mockResolvedValue(0) }, brandAccount: { count: jest.fn().mockResolvedValue(1) }, brandProduct: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockRejectedValue(err) } };
+    const prisma: any = { brand: { findUnique: jest.fn().mockResolvedValue(null) }, brandDrop: { count: jest.fn().mockResolvedValue(0) }, brandAccount: { count: jest.fn().mockResolvedValue(1) }, creatorCollab: { count: jest.fn().mockResolvedValue(0) }, brandProduct: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockRejectedValue(err) } };
     await expect(new BrandCatalogService(prisma, passthrough).create('b1', { title: 'T', sku: 'S', price: 1, images: [], category: 'c', buyUrl: 'https://a' } as any)).rejects.toThrow(ConflictException);
   });
   it('public view hides internal fields and counts only approved brands for clicks', async () => {

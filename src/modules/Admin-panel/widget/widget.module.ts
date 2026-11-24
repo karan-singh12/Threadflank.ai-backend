@@ -7,10 +7,13 @@ import { SdkModule } from '../../../sdk';
 import { WidgetAdminController } from './widget.controller';
 import { WidgetPublicController } from '../../User-panel/widget/widget-public.controller';
 import { WidgetService } from './widget.service';
+import { WidgetTryOnService } from '../../User-panel/widget/widget-tryon.service';
+import { ImageProviderModule } from '../../../shared/image-provider/image-provider.module';
+import { StorageModule } from '../../../shared/storage/storage.module';
 
 @Module({
-  imports: [PrismaModule, AdminAuthModule, AuditLogModule, BrandsModule, SdkModule],
+  imports: [PrismaModule, AdminAuthModule, AuditLogModule, BrandsModule, SdkModule, ImageProviderModule, StorageModule.register()],
   controllers: [WidgetPublicController, WidgetAdminController],
-  providers: [WidgetService],
+  providers: [WidgetService, WidgetTryOnService],
 })
 export class WidgetModule {}

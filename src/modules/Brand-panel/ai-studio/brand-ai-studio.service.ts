@@ -85,7 +85,7 @@ export class BrandAiStudioService {
     if (dto.garmentId) await this.catalogService.findOne(brandId, dto.garmentId);
     const text = dto.text.trim();
     return this.prisma.brandContentItem.create({
-      data: { brandId, contentType: dto.contentType, body: text, garmentId: dto.garmentId ?? null, title: (dto.title?.trim() || text.replace(/s+/g, " ")).slice(0, 80) },
+      data: { brandId, contentType: dto.contentType, body: text, garmentId: dto.garmentId ?? null, title: (dto.title?.trim() || text.replace(/\s+/g, " ")).slice(0, 80) },
     });
   }
 

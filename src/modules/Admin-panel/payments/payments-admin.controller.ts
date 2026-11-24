@@ -55,6 +55,13 @@ export class PaymentsAdminController {
     return { message: "Payments fetched", data: result.payments, meta: result.meta };
   }
 
+  @Get("brand-payments")
+  @ApiOperation({ summary: "Brands' plan and credit purchases" })
+  async listBrandPayments(@Query() filter: PaymentsFilterDto) {
+    const result = await this.payments.listBrandPayments(filter);
+    return { message: "Brand payments fetched", data: result.payments, meta: result.meta };
+  }
+
   @Post("credits")
   @ApiOperation({ summary: "Add or remove a user's credits" })
   async adjustCredits(@Body() dto: AdjustCreditsDto, @CurrentAdmin() admin: AuthenticatedAdmin) {

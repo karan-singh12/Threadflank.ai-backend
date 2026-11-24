@@ -49,13 +49,14 @@ export class BrandPortalService {
 
   async overview(admin: AuthenticatedAdmin) {
     const base = await this.baseWhere(admin);
-    const [pending, active, inactive, unverifiedEmails] = await Promise.all([
+    const [pending, active, inactive, unverifiedEmails, gstPending] = await Promise.all([
       this.prisma.brand.count({ where: { ...base, status: BrandStatus.PENDING } }),
       this.prisma.brand.count({ where: { ...base, status: BrandStatus.ACTIVE } }),
       this.prisma.brand.count({ where: { ...base, status: BrandStatus.INACTIVE } }),
       this.prisma.brandAccount.count({ where: { emailVerified: false, brand: base } }),
+      this.prisma.brand.count({ where: { ...base, gstin: { not: null }, gstVerifiedAt: null } }),
     ]);
-    return { pending, active, inactive, total: pending + active + inactive, unverifiedEmails };
+    return { pending, active, inactive, total: pending + active + inactive, unverifiedEmails, gstPending };
   }
 
   async list(filter: BrandPortalFilterDto, admin: AuthenticatedAdmin) {
@@ -63,6 +64,10 @@ export class BrandPortalService {
     const limit = Math.min(filter.limit ?? 20, 100);
     const where: Prisma.BrandWhereInput = await this.baseWhere(admin);
     if (filter.status) where.status = filter.status;
+    if (filter.plan) where.plan = filter.plan;
+    if (filter.gst === 'pending') Object.assign(where, { gstin: { not: null }, gstVerifiedAt: null });
+    else if (filter.gst === 'verified') Object.assign(where, { gstin: { not: null }, gstVerifiedAt: { not: null } });
+    else if (filter.gst === 'none') where.gstin = null;
     if (filter.search) {
       where.OR = [
         { name: { contains: filter.search, mode: 'insensitive' } },

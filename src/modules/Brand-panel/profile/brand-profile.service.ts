@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UpdateBrandProfileDto } from '../dto/brand-common.dto';
 import { BrandAuthService } from '../auth/brand-auth.service';
+import { cleanNotifyPrefs, NOTIFY_KINDS, notifyPrefsOf } from '../notify/brand-notify';
 
 @Injectable()
 export class BrandProfileService {
@@ -14,6 +15,20 @@ export class BrandProfileService {
 
   getProfile(brandId: string) {
     return this.authService.getProfile(brandId);
+  }
+
+  async notifications(brandId: string) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { notifyPrefs: true } });
+    if (!brand) throw new NotFoundException('Brand not found.');
+    return { kinds: NOTIFY_KINDS, prefs: notifyPrefsOf(brand.notifyPrefs) };
+  }
+
+  async setNotifications(brandId: string, input: Record<string, unknown>) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { notifyPrefs: true } });
+    if (!brand) throw new NotFoundException('Brand not found.');
+    const prefs = cleanNotifyPrefs(input, brand.notifyPrefs);
+    await this.prisma.brand.update({ where: { id: brandId }, data: { notifyPrefs: prefs } });
+    return { kinds: NOTIFY_KINDS, prefs };
   }
 
   async updateProfile(brandId: string, dto: UpdateBrandProfileDto) {
@@ -51,9 +66,11 @@ export class BrandProfileService {
         ...(dto.logo !== undefined ? { logoUrl: dto.logo } : {}),
         ...(dto.websiteUrl !== undefined ? { websiteUrl: dto.websiteUrl } : {}),
         ...(gstin !== undefined ? { gstin } : {}),
+        // A new number has to be checked again before the badge comes back.
+        ...(gstin !== undefined && gstin !== existing.gstin ? { gstVerifiedAt: null, gstVerifiedBy: null } : {}),
         socialLinks: updatedSocial as Prisma.InputJsonValue,
       },
     });
-    return this.authService.toProfile(updated);
+    return this.authService.withLiveNumbers(this.authService.toProfile(updated));
   }
 }

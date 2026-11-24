@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException, Optional } from '@nestjs/common';
+import { RankingService } from '../ranking/ranking.service';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 import { Brand, BrandAccount, BrandAuthTokenPurpose } from '@prisma/client';
@@ -7,6 +8,8 @@ import { BrandLoginDto, RegisterBrandDto } from '../dto/brand-common.dto';
 import { BRAND_AUTH, BrandJwtStrategy } from './brand-jwt.strategy';
 import { MailerService } from '../../../shared/mailer/mailer.service';
 import { assertPlanRoom } from '../billing/plans';
+import { ASSIGNABLE_ROLES, AssignableRole } from './brand-roles';
+import { notifyPrefsOf } from '../notify/brand-notify';
 import { AppLogger } from '../../../shared/logger/logger.service';
 import { passwordResetEmailHtml, verificationEmailHtml } from '../../../common/utils/email.util';
 
@@ -34,6 +37,7 @@ export class BrandAuthService {
     private readonly brandJwt: BrandJwtStrategy,
     private readonly mailer: MailerService,
     private readonly logger: AppLogger,
+    @Optional() private readonly rankings?: RankingService,
   ) {}
 
   /** The shape the brand panel reads. Values with no data source yet are 0/empty, not invented. */
@@ -57,6 +61,8 @@ export class BrandAuthService {
       followersCount: 0,
       aiCredits: social.aiCredits ?? 0,
       gstin: brand.gstin ?? '',
+      gstVerified: Boolean(brand.gstin && brand.gstVerifiedAt),
+      notifyPrefs: notifyPrefsOf(brand.notifyPrefs),
       currentRank: 0,
       totalBrands: 0,
       rankScore: social.rankScore ?? 0,
@@ -68,7 +74,19 @@ export class BrandAuthService {
   async getProfile(brandId: string) {
     const brand = await this.prisma.brand.findUnique({ where: { id: brandId } });
     if (!brand || brand.isDeleted) throw new NotFoundException('Brand not found.');
-    return this.toProfile(brand);
+    return this.withLiveNumbers(this.toProfile(brand));
+  }
+
+  /**
+   * Followers and this month's rank are worked out live; toProfile alone leaves them at zero.
+   * A ranking hiccup never fails the profile: the numbers just stay at zero for that response.
+   */
+  async withLiveNumbers<T extends ReturnType<BrandAuthService['toProfile']>>(profile: T): Promise<T> {
+    const [followersCount, standing] = await Promise.all([
+      this.prisma.brandFollow.count({ where: { brandId: profile.id } }).catch(() => 0),
+      this.rankings ? this.rankings.forBrand(profile.id).catch(() => null) : Promise.resolve(null),
+    ]);
+    return { ...profile, followersCount, currentRank: standing?.rank ?? 0, totalBrands: standing?.of ?? 0, rankScore: standing?.score ?? 0 };
   }
 
   private accountView(account: BrandAccount) {
@@ -314,7 +332,23 @@ export class BrandAuthService {
     });
   }
 
-  async inviteMember(brandAccountId: string, brandId: string, input: { email: string; name: string; role?: 'MANAGER' | 'VIEWER' }) {
+  /**
+   * Staff give a brand that has no login yet (one added in the admin panel before the brand panel
+   * existed) its owner account. The owner sets their own password from the emailed link.
+   */
+  async inviteOwner(brandId: string, input: { email: string; name: string }, inviterName = 'The Threadflank team') {
+    const brand = await this.prisma.brand.findFirst({ where: { id: brandId, isDeleted: false } });
+    if (!brand) throw new NotFoundException('Brand not found.');
+    if (await this.prisma.brandAccount.count({ where: { brandId, role: 'OWNER' } })) throw new ConflictException('This brand already has an owner login.');
+    const email = input.email.trim().toLowerCase();
+    if (await this.prisma.brandAccount.findUnique({ where: { email } })) throw new ConflictException('That email already has a Threadflank brand account.');
+    const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
+    const owner = await this.prisma.brandAccount.create({ data: { brandId, email, password, name: input.name.trim(), role: 'OWNER' } });
+    await this.sendInvite(owner, brand.name, inviterName);
+    return { id: owner.id, email: owner.email, name: owner.name, role: owner.role };
+  }
+
+  async inviteMember(brandAccountId: string, brandId: string, input: { email: string; name: string; role?: AssignableRole }) {
     const owner = await this.requireOwner(brandAccountId, brandId);
     await assertPlanRoom(this.prisma, brandId, 'team');
     const email = input.email.trim().toLowerCase();
@@ -322,7 +356,8 @@ export class BrandAuthService {
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
     // The invitee never sees this: they set their own password from the emailed link.
     const password = await bcrypt.hash(randomBytes(24).toString('hex'), 10);
-    const member = await this.prisma.brandAccount.create({ data: { brandId, email, password, name: input.name.trim(), role: input.role === 'VIEWER' ? 'VIEWER' : 'MANAGER' } });
+    const role: AssignableRole = input.role && ASSIGNABLE_ROLES.includes(input.role) ? input.role : 'MANAGER';
+    const member = await this.prisma.brandAccount.create({ data: { brandId, email, password, name: input.name.trim(), role } });
     await this.sendInvite(member, brand.name, owner.name);
     return { id: member.id, name: member.name, email: member.email, role: member.role, isActive: member.isActive, pending: true, lastLoginAt: null };
   }
@@ -337,7 +372,7 @@ export class BrandAuthService {
   }
 
   /** Changes a teammate's role. Their sessions are ended so the new role applies the next time they sign in. */
-  async setMemberRole(brandAccountId: string, brandId: string, memberId: string, role: 'MANAGER' | 'VIEWER') {
+  async setMemberRole(brandAccountId: string, brandId: string, memberId: string, role: AssignableRole) {
     await this.requireOwner(brandAccountId, brandId);
     const member = await this.prisma.brandAccount.findFirst({ where: { id: memberId, brandId } });
     if (!member) throw new NotFoundException('Team member not found.');

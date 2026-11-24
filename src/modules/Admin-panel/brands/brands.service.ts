@@ -57,7 +57,8 @@ export class BrandsService {
     }
 
     const [brands, total] = await Promise.all([
-      this.prisma.brand.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } }),
+      // The login count tells staff which brands still need an owner invited.
+      this.prisma.brand.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' }, include: { _count: { select: { accounts: true } } } }),
       this.prisma.brand.count({ where }),
     ]);
 

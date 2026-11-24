@@ -10,6 +10,11 @@ model User {
   id                  String              @id @default(cuid())
   dropWaitlist        DropWaitlistEntry[]
   brandFollows        BrandFollow[]
+  brandReviews        BrandProductReview[]
+  brandThreads        BrandThread[]
+  brandPollVotes      BrandPollVote[]
+  brandUgc            BrandUgc[]
+  creatorCollabs      CreatorCollab[]
   email               String              @unique
   username            String?             @unique
   password            String
@@ -499,9 +504,22 @@ model Brand {
 
   /// GST number as the brand entered it (format-checked, not verified with the GST portal).
   gstin String?
+  /// Set when staff have checked the GSTIN against the GST portal; cleared whenever the number changes.
+  gstVerifiedAt DateTime?
+  gstVerifiedBy String?
+  /// Which emails the brand team gets (see notify/brand-notify.ts). Missing keys mean on.
+  notifyPrefs Json?
   /// Monthly plan (FREE, GROWTH or PRO). A paid plan counts only while planUntil is in the future.
   plan      String    @default("FREE")
   planUntil DateTime?
+
+  /// Store Builder: the layout being edited and not yet published (see store-layout.ts). Null = nothing unpublished.
+  storeDraft       Json?
+  /// The layout shoppers see. Null = the default store page.
+  storeLayout      Json?
+  storePublishedAt DateTime?
+  /// Earlier store URLs (slugs) that still lead here after a rename. Newest first, at most 5.
+  previousSlugs    String[]  @default([])
 
   managers       BrandManagerAssignment[]
   accounts       BrandAccount[]
@@ -518,11 +536,21 @@ model Brand {
   products       BrandProduct[]
   drops          BrandDrop[]
   bids           Bid[]
+  rankings       BrandRanking[]
+  campaignEntries CampaignEntry[]
+  updates         BrandUpdate[]
+  threads         BrandThread[]
+  savedReplies    BrandSavedReply[]
+  reviews         BrandProductReview[]
+  ugc             BrandUgc[]
+  offers          BrandOffer[]
+  collabs         CreatorCollab[]
 
   @@index([status])
   @@index([isDeleted])
   // The brands directory: live brands in name order.
   @@index([status, isDeleted, name])
+  @@index([previousSlugs], type: Gin)
 }
 
 model BrandManagerAssignment {
@@ -543,7 +571,9 @@ model BrandManagerAssignment {
 enum BrandAccountRole {
   OWNER // everything, including billing and the team
   MANAGER // everything except billing and the team
-  VIEWER // read-only
+  VIEWER // read-only, without deep insights or billing
+  CONTENT // edits the catalog, AI Studio, launches, store page and community; nothing else
+  ANALYST // read-only, with deep insights, payments and invoices
 }
 
 model BrandAccount {
@@ -1118,6 +1148,10 @@ model BrandEvent {
   productId String?
   type      BrandEventType
   userId    String?
+  /// What the shopper searched for before landing on the store (store views from search only).
+  query     String?
+  /// Creator collab code the shopper arrived through (click-outs only).
+  ref       String?
   createdAt DateTime       @default(now())
 
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
@@ -1125,6 +1159,7 @@ model BrandEvent {
   @@index([brandId, type, createdAt])
   @@index([productId, type, createdAt])
   @@index([createdAt])
+  @@index([ref])
 }
 
 // ─── Branded share cards ──────────────────────────────────────────────────────
@@ -1283,12 +1318,32 @@ model BrandProduct {
   publishedAt   DateTime?
   /// The old BrandPost this piece was created from (set by the migration so it can be re-run safely).
   sourcePostId  String?  @unique
+  /// Fit guidance shown beside the size chart, e.g. "Runs small: size up for a relaxed fit".
+  fitNotes      String?
+  /// { unit: "in" | "cm", columns: string[], rows: string[][] }; the first column is the size.
+  sizeChart     Json?
+  /// What the piece is made of and how it is patterned (from auto-tagging or typed by the brand).
+  fabric        String?
+  pattern       String?
+  /// Free-form style tags such as "zari" or "anarkali". Searchable.
+  tags          String[] @default([])
+  /// Keywords the AI writer suggested for the brand's own listings.
+  seoKeywords   String[] @default([])
+  /// Why the drape-ready photo check failed. Empty when it passed or has not run (see drapeCheckedAt).
+  drapeIssues   String[] @default([])
+  drapeCheckedAt DateTime?
+  /// Set by a store sync (SHOPIFY or WOOCOMMERCE) so the next sync updates this piece instead of adding a copy.
+  externalSource String?
+  externalId     String?
+  syncedAt       DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
   likes    BrandProductLike[]
   comments BrandProductComment[]
+  variants BrandVariant[]
+  reviews  BrandProductReview[]
 
   @@unique([brandId, sku])
   @@index([brandId, createdAt])
@@ -1303,6 +1358,32 @@ model BrandProduct {
   @@index([status, publishedAt(sort: Desc), id(sort: Desc)])
   @@index([brandId, status, publishedAt(sort: Desc)])
   @@index([category, status, publishedAt])
+  @@index([brandId, externalSource, externalId])
+}
+
+/// One size/colour of a piece with its own stock (and optionally its own price and SKU). When a piece
+/// has variants, its own stock, sizes and colours are kept as the roll-up of these rows, so filters,
+/// low-stock counts and shopper badges keep working off the piece.
+model BrandVariant {
+  id         String   @id @default(cuid())
+  productId  String
+  size       String   @default("")
+  color      String   @default("")
+  colorHex   String?
+  sku        String?
+  /// Rupees. Null means the piece's own price.
+  price      Float?
+  stock      Int      @default(0)
+  sortOrder  Int      @default(0)
+  /// The store sync's id for this variant.
+  externalId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  product BrandProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, size, color])
+  @@index([productId, sortOrder])
 }
 
 model BrandDrop {
@@ -1314,6 +1395,8 @@ model BrandDrop {
   launchDate     DateTime
   bannerUrl      String   @default("")
   productsCount  Int      @default(1)
+  /// A short teaser video for the countdown page (an uploaded or AI Studio video).
+  teaserUrl      String?
   /** Set once followers and the waitlist have been told the drop is live. */
   notifiedAt     DateTime?
   createdAt      DateTime @default(now())
@@ -1595,6 +1678,9 @@ model BrandProductComment {
   productId String
   userId    String
   content   String
+  /// The brand's answer, shown under the shopper's question.
+  brandReply     String?
+  brandRepliedAt DateTime?
   createdAt DateTime @default(now())
 
   product BrandProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -1621,4 +1707,294 @@ model DiscoverCategory {
 
   @@unique([kind, slug])
   @@index([kind, isActive, sortOrder])
+}
+
+/// A brand's final monthly standing, written once the month is over (live standings for the current
+/// month are worked out on demand). Paid placement never feeds into the score.
+model BrandRanking {
+  id         String   @id @default(cuid())
+  /// "2026-11": the month in India time.
+  month      String
+  brandId    String
+  score      Float
+  rank       Int
+  /// The points by action and the catalog-size adjustment, so the brand can see where the score came from.
+  breakdown  Json
+  computedAt DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([month, brandId])
+  @@index([month, rank])
+  @@index([brandId, month])
+}
+
+/// A platform campaign ("Diwali Edit", "Wedding Season Edit") that brands opt into with their own pieces.
+model Campaign {
+  id               String    @id @default(cuid())
+  slug             String    @unique
+  name             String
+  description      String?
+  /// The occasion it is built around, from the admin occasion list (optional).
+  occasion         String?
+  bannerUrl        String    @default("")
+  startsAt         DateTime
+  endsAt           DateTime
+  /// Brands can join until this moment; empty = until the campaign ends.
+  joinBy           DateTime?
+  isActive         Boolean   @default(true)
+  createdByAdminId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  entries CampaignEntry[]
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+/// A brand taking part in a campaign with the pieces it picked.
+model CampaignEntry {
+  id         String   @id @default(cuid())
+  campaignId String
+  brandId    String
+  productIds String[]
+  joinedAt   DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, brandId])
+  @@index([brandId])
+}
+
+/// Something the Occasion Planner said a shopper's wardrobe is missing for an occasion. Anonymous by
+/// design (no user id), so brands can see aggregate wardrobe gaps without any shopper being identifiable.
+model PlannerGap {
+  id        String   @id @default(cuid())
+  occasion  String
+  item      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([occasion, createdAt])
+}
+
+// ─── Brand community ─────────────────────────────────────────────────────────
+
+/// A brand's post to its followers: a short update, or a poll ("Which colour next?").
+model BrandUpdate {
+  id          String    @id @default(cuid())
+  brandId     String
+  /// UPDATE or POLL.
+  kind        String    @default("UPDATE")
+  body        String
+  media       String[]  @default([])
+  productIds  String[]  @default([])
+  pollOptions String[]  @default([])
+  pollEndsAt  DateTime?
+  isDeleted   Boolean   @default(false)
+  publishedAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  brand Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  votes BrandPollVote[]
+
+  @@index([brandId, publishedAt(sort: Desc)])
+  @@index([publishedAt])
+}
+
+/// One shopper's vote on a poll (one per poll; voting again changes it).
+model BrandPollVote {
+  id        String   @id @default(cuid())
+  updateId  String
+  userId    String
+  option    Int
+  createdAt DateTime @default(now())
+
+  update BrandUpdate @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([updateId, userId])
+}
+
+/// A conversation between a shopper and a brand's inbox (size, fabric, delivery questions).
+model BrandThread {
+  id            String   @id @default(cuid())
+  brandId       String
+  userId        String
+  productId     String?
+  /// OPEN or CLOSED.
+  status        String   @default("OPEN")
+  brandUnread   Int      @default(0)
+  userUnread    Int      @default(0)
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  brand    Brand                @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages BrandThreadMessage[]
+
+  @@index([brandId, lastMessageAt(sort: Desc)])
+  @@index([userId, lastMessageAt(sort: Desc)])
+}
+
+model BrandThreadMessage {
+  id             String   @id @default(cuid())
+  threadId       String
+  fromBrand      Boolean
+  body           String
+  /// Which teammate answered, for the brand's own records.
+  brandAccountId String?
+  createdAt      DateTime @default(now())
+
+  thread BrandThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+}
+
+/// A quick reply a brand reuses in its inbox ("Ships in 3–5 days").
+model BrandSavedReply {
+  id        String   @id @default(cuid())
+  brandId   String
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+}
+
+/// A shopper's rating and review of a piece they tried on. One per shopper per piece; the brand can reply.
+model BrandProductReview {
+  id             String    @id @default(cuid())
+  productId      String
+  brandId        String
+  userId         String
+  rating         Int
+  body           String?
+  brandReply     String?
+  brandRepliedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  product BrandProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  brand   Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, userId])
+  @@index([brandId, createdAt(sort: Desc)])
+  @@index([productId, createdAt(sort: Desc)])
+}
+
+/// A look a shopper chose to share with a brand. The brand sees only what was submitted, and shows it
+/// on its store only once it approves it.
+model BrandUgc {
+  id         String    @id @default(cuid())
+  brandId    String
+  userId     String
+  lookId     String?
+  imageUrl   String
+  caption    String?
+  /// Show the shopper's username with the look (their choice when submitting).
+  showName   Boolean   @default(true)
+  /// PENDING, APPROVED or DECLINED.
+  status     String    @default("PENDING")
+  createdAt  DateTime  @default(now())
+  decidedAt  DateTime?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, lookId])
+  @@index([brandId, status, createdAt(sort: Desc)])
+}
+
+/// A shopper-facing offer: a discount code to use on the brand's own site, or a flash sale with a timer.
+/// ThreadFlank never takes the payment; it shows the badge and the code, and counts how often it is copied.
+model BrandOffer {
+  id         String   @id @default(cuid())
+  brandId    String
+  /// COUPON or FLASH_SALE.
+  kind       String
+  title      String
+  /// The code shoppers copy (coupons only).
+  code       String?
+  percentOff Int?
+  /// Rupees off.
+  amountOff  Int?
+  /// Pieces it applies to; empty = the whole store.
+  productIds String[] @default([])
+  startsAt   DateTime
+  endsAt     DateTime
+  isActive   Boolean  @default(true)
+  copies     Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, isActive, endsAt])
+}
+
+// ─── Creator collabs (Brand Panel 3.9) ────────────────────────────────────────
+
+/// A brand asks a verified stylist for a look, unboxing or launch post. The code is the tracking link /c/:code.
+model CreatorCollab {
+  id             String    @id @default(cuid())
+  brandId        String
+  /// User.id of a VERIFIED StylistProfile.
+  creatorId      String
+  /// DRAPE_LOOK | UNBOXING | LAUNCH_PROMO
+  kind           String
+  brief          String
+  productIds     String[]  @default([])
+  dropId         String?
+  /// Rupees, agreed and paid off-platform. Shown to the creator, never to shoppers.
+  fee            Int?
+  /// PENDING | ACCEPTED | DECLINED | DONE | CANCELLED
+  status         String    @default("PENDING")
+  code           String    @unique
+  deliverableUrl String?
+  lookIds        String[]  @default([])
+  creatorNote    String?
+  respondedAt    DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  brand   Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  creator User           @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  visits  CreatorVisit[]
+
+  @@index([brandId, status])
+  @@index([creatorId, status])
+}
+
+/// Someone opened a collab's tracking link. userId only when signed in.
+model CreatorVisit {
+  id        String   @id @default(cuid())
+  collabId  String
+  userId    String?
+  createdAt DateTime @default(now())
+
+  collab CreatorCollab @relation(fields: [collabId], references: [id], onDelete: Cascade)
+
+  @@index([collabId, createdAt])
+}
+
+/// Folders and tags a brand puts on its AI Studio work (saved copy, model shots, videos, reels), so the
+/// Content Library can organise items that live in their own tables. One row per tagged item.
+model BrandLibraryMeta {
+  id        String   @id @default(cuid())
+  brandId   String
+  /// "copy" | "photo" | "video" | "reel"
+  kind      String
+  itemId    String
+  folder    String?
+  tags      String[] @default([])
+  updatedAt DateTime @updatedAt
+
+  @@unique([kind, itemId])
+  @@index([brandId, folder])
 }

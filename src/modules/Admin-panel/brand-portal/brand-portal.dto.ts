@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { BrandStatus } from '@prisma/client';
 
@@ -10,6 +10,16 @@ export class BrandPortalFilterDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(BrandStatus)
   status?: BrandStatus;
+
+  /** pending = a GSTIN is on file and not yet checked. */
+  @IsOptional()
+  @IsIn(['pending', 'verified', 'none'])
+  gst?: 'pending' | 'verified' | 'none';
+
+  /** The stored plan; a lapsed paid plan still matches its name here. */
+  @IsOptional()
+  @IsIn(['FREE', 'GROWTH', 'PRO'])
+  plan?: 'FREE' | 'GROWTH' | 'PRO';
 }
 
 export enum VerificationAction {

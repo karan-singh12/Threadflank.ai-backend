@@ -1,6 +1,10 @@
 import { ArrayMaxSize, IsIn, IsString, IsOptional, IsNumber, IsBoolean, IsArray, IsEmail, IsInt, IsISO8601, Matches, ValidateIf, MinLength, MaxLength, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsObject, ValidateNested } from 'class-validator';
+import { VariantDto } from '../catalog/catalog-ai.dto';
 import { CONTENT_TYPES, type BrandContentType } from '../../../sdk/prompts/brand-content.prompt';
+import { ASSIGNABLE_ROLES, type AssignableRole } from '../auth/brand-roles';
 
 export class UpdateBrandProfileDto {
   @ApiPropertyOptional({ example: '27AAPFU0939F1ZV', description: 'GST number; send an empty string to remove it' })
@@ -224,6 +228,53 @@ export class CreateGarmentDto {
   @IsIn(['DRAFT', 'PUBLISHED'])
   @IsOptional()
   status?: 'DRAFT' | 'PUBLISHED';
+
+  @ApiPropertyOptional({ type: [VariantDto], description: 'Sizes and colours with their own stock. Replaces the whole table; send [] to remove all.' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => VariantDto)
+  variants?: VariantDto[];
+
+  @ApiPropertyOptional({ description: '{ unit: "in" | "cm", columns: string[], rows: string[][] }; null removes it' })
+  @IsOptional()
+  @IsObject()
+  sizeChart?: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({ example: 'Runs small, size up for a relaxed fit' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  fitNotes?: string;
+
+  @ApiPropertyOptional({ example: 'Chanderi silk' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  fabric?: string;
+
+  @ApiPropertyOptional({ example: 'Zari border' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  pattern?: string;
+
+  @ApiPropertyOptional({ example: ['anarkali', 'pastel'] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  tags?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  seoKeywords?: string[];
 }
 
 export class UpdateGarmentDto {
@@ -323,6 +374,53 @@ export class UpdateGarmentDto {
   @IsIn(['DRAFT', 'PUBLISHED'])
   @IsOptional()
   status?: 'DRAFT' | 'PUBLISHED';
+
+  @ApiPropertyOptional({ type: [VariantDto], description: 'Sizes and colours with their own stock. Replaces the whole table; send [] to remove all.' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => VariantDto)
+  variants?: VariantDto[];
+
+  @ApiPropertyOptional({ description: '{ unit: "in" | "cm", columns: string[], rows: string[][] }; null removes it' })
+  @IsOptional()
+  @IsObject()
+  sizeChart?: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({ example: 'Runs small, size up for a relaxed fit' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  fitNotes?: string;
+
+  @ApiPropertyOptional({ example: 'Chanderi silk' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  fabric?: string;
+
+  @ApiPropertyOptional({ example: 'Zari border' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  pattern?: string;
+
+  @ApiPropertyOptional({ example: ['anarkali', 'pastel'] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  tags?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  seoKeywords?: string[];
 }
 
 export class PlaceBidDto {
@@ -367,6 +465,13 @@ export class CreateDropDto {
   @Max(10000)
   @IsOptional()
   productsCount?: number;
+  @ApiPropertyOptional({ description: "Teaser video for the countdown page: an https link, or empty to remove" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  @ValidateIf((o) => !!o.teaserUrl)
+  @Matches(/^(https:\/\/|\/)/i, { message: "The teaser needs a full https:// link." })
+  teaserUrl?: string;
 }
 
 export class UpdateDropDto {
@@ -408,6 +513,13 @@ export class UpdateDropDto {
   @Max(10000)
   @IsOptional()
   productsCount?: number;
+  @ApiPropertyOptional({ description: "Teaser video for the countdown page: an https link, or empty to remove" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  @ValidateIf((o) => !!o.teaserUrl)
+  @Matches(/^(https:\/\/|\/)/i, { message: "The teaser needs a full https:// link." })
+  teaserUrl?: string;
 }
 
 export const VIDEO_PRESET_IDS = ['studio_turn', 'runway_walk', 'festive_twirl', 'red_carpet', 'silk_motion', 'velvet_glow'] as const;
@@ -578,10 +690,10 @@ export class InviteMemberDto {
   @MaxLength(80)
   name!: string;
 
-  @ApiPropertyOptional({ enum: ['MANAGER', 'VIEWER'], description: 'MANAGER can do everything except billing and the team; VIEWER is read-only.' })
-  @IsIn(['MANAGER', 'VIEWER'])
+  @ApiPropertyOptional({ enum: ASSIGNABLE_ROLES, description: 'MANAGER: everything except billing and the team. CONTENT: catalog, AI Studio, launches, store page, community. ANALYST: read-only with insights and invoices. VIEWER: read-only.' })
+  @IsIn(ASSIGNABLE_ROLES)
   @IsOptional()
-  role?: 'MANAGER' | 'VIEWER';
+  role?: AssignableRole;
 }
 
 export class SetMemberActiveDto {
@@ -591,9 +703,9 @@ export class SetMemberActiveDto {
 }
 
 export class SetMemberRoleDto {
-  @ApiProperty({ enum: ['MANAGER', 'VIEWER'] })
-  @IsIn(['MANAGER', 'VIEWER'])
-  role!: 'MANAGER' | 'VIEWER';
+  @ApiProperty({ enum: ASSIGNABLE_ROLES })
+  @IsIn(ASSIGNABLE_ROLES)
+  role!: AssignableRole;
 }
 
 export class WidgetDomainsDto {

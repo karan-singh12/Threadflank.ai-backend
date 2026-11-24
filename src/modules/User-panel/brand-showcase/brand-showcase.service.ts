@@ -1,3 +1,4 @@
+import { stockState } from '../../Brand-panel/catalog/catalog-variants';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BrandCatalogService, type PublicProduct } from '../../Brand-panel/catalog/brand-catalog.service';
@@ -40,6 +41,8 @@ export class BrandShowcaseService {
         colors: c.colors,
         sizes: c.sizes,
         inStock: c.stock > 0,
+        stockState: stockState(c.stock),
+        variants: [],
         isDrapeReady: c.isDrapeReady,
         hasBuyLink: false,
         featured: false,
@@ -92,8 +95,8 @@ export class BrandShowcaseService {
     return this.dropsSvc.leaveWaitlist(dropId, userId);
   }
 
-  click(productId: string) {
-    return this.catalogSvc.recordPublicClick(productId);
+  click(productId: string, ref?: string) {
+    return this.catalogSvc.recordPublicClick(productId, ref);
   }
 
   spotlight() {

@@ -43,14 +43,15 @@ describe('ModelRouter', () => {
 
   it('falls back to the next provider in the chain on a transient failure', async () => {
     const gemini = makeProvider('gemini', new ProviderTransientError('gemini', new Error('rate limited')));
-    const groq = makeProvider('groq', async () => ({ content: 'from groq', provider: 'groq', model: 'openai/gpt-oss-120b' }));
-    mockClientFactory.get.mockImplementation((name: string) => (name === 'gemini' ? gemini : name === 'groq' ? groq : makeProvider(name, async () => ({}))));
+    // The default chain is gemini, openrouter, groq, claude, openai (router-config.ts): OpenRouter is next.
+    const openrouter = makeProvider('openrouter', async () => ({ content: 'from openrouter', provider: 'openrouter', model: 'google/gemini-3.8-flash' }));
+    mockClientFactory.get.mockImplementation((name: string) => (name === 'gemini' ? gemini : name === 'openrouter' ? openrouter : makeProvider(name, async () => ({}))));
 
     const result = await router.execute({ taskType: 'caption-generation', messages: [{ role: 'user', content: 'x' }] });
 
-    expect(result.content).toBe('from groq');
+    expect(result.content).toBe('from openrouter');
     expect(gemini.generate).toHaveBeenCalledTimes(1);
-    expect(groq.generate).toHaveBeenCalledTimes(1);
+    expect(openrouter.generate).toHaveBeenCalledTimes(1);
   });
 
   it('skips providers without an API key, so a Claude-routed task runs elsewhere until the key is added', async () => {

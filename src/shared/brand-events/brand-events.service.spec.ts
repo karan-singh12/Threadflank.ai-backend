@@ -18,8 +18,8 @@ describe('BrandEventsService', () => {
     await service.flush();
     expect(prisma.brandEvent.createMany).toHaveBeenCalledTimes(1);
     expect(written(prisma)).toEqual([
-      { brandId: 'b1', type: 'SAVE', productId: 'p1', userId: 'u1' },
-      { brandId: 'b1', type: 'SHARE', productId: 'p1', userId: null },
+      { brandId: 'b1', type: 'SAVE', productId: 'p1', userId: 'u1', query: null, ref: null },
+      { brandId: 'b1', type: 'SHARE', productId: 'p1', userId: null, query: null, ref: null },
     ]);
   });
 
@@ -65,7 +65,7 @@ describe('BrandEventsService', () => {
       await service.recordDrape('p1', 'u1');
       expect(prisma.brandProduct.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { drapesCount: { increment: 1 } } });
       await service.flush();
-      expect(written(prisma)).toEqual([{ brandId: 'b1', type: 'DRAPE', productId: 'p1', userId: 'u1' }]);
+      expect(written(prisma)).toEqual([{ brandId: 'b1', type: 'DRAPE', productId: 'p1', userId: 'u1', query: null, ref: null }]);
     });
 
     it('ignores a piece that is not live or does not exist', async () => {

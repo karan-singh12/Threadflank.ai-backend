@@ -9,6 +9,10 @@ export interface BrandEventInput {
   userId?: string;
   /** Who is acting (user id, else IP): the same actor viewing the same thing again within 30 minutes counts once. */
   actor?: string;
+  /** The search that led here, for store views that came from search. */
+  query?: string;
+  /** Creator collab code (click-outs from a creator link). */
+  ref?: string;
 }
 
 const FLUSH_EVERY_MS = 3_000;
@@ -50,7 +54,7 @@ export class BrandEventsService implements OnModuleInit, OnApplicationShutdown {
         this.seen.set(key, now);
         if (this.seen.size > 20_000) this.prune(now);
       }
-      this.buffer.push({ brandId: e.brandId, type: e.type, productId: e.productId ?? null, userId: e.userId ?? null });
+      this.buffer.push({ brandId: e.brandId, type: e.type, productId: e.productId ?? null, userId: e.userId ?? null, query: e.query ?? null, ref: e.ref ?? null });
       if (this.buffer.length >= FLUSH_AT) void this.flush();
     } catch {
       /* analytics must never break a request */

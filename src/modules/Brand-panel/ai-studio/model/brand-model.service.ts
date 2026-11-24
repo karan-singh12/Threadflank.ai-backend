@@ -17,6 +17,8 @@ import {
   findPose,
 } from './model-presets';
 import { buildShootPrompt } from './model-prompt';
+import { PHOTO_TOOL_COST, photoToolPrompt, TOOL_PREFIX, toolLabel } from './photo-tools';
+import { PhotoToolDto } from './brand-model.dto';
 
 /** Credits one model shot costs. Taken when it starts, given straight back if the engine fails. */
 export const MODEL_SHOT_COST = 6;
@@ -141,6 +143,61 @@ export class BrandModelService {
     return { shot: this.toView(shot), remainingCredits: remaining };
   }
 
+  /**
+   * A photo tool (background swap, ghost mannequin, ad creative) on one of the brand's garment
+   * photos or an upload. Charged like a shoot: taken up front, given back if the render fails.
+   */
+  async edit(brandId: string, dto: PhotoToolDto) {
+    let plan: ReturnType<typeof photoToolPrompt>;
+    try {
+      plan = photoToolPrompt({ tool: dto.tool, backdropId: dto.backdropId, format: dto.format, headline: dto.headline });
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Choose the tool options.');
+    }
+    const garment = dto.garmentId ? await this.catalog.findOne(brandId, dto.garmentId) : undefined;
+    const sourceImageUrl = dto.customImageUrl?.trim() || garment?.images?.[0];
+    if (!sourceImageUrl) throw new BadRequestException('Choose a garment that has a photo, or upload one.');
+    if (!this.images.hasEngine(['gemini'])) throw new ServiceUnavailableException('Photo tools are not connected yet. No credits were charged.');
+
+    const source = await loadSourceImage(sourceImageUrl);
+    const remaining = await spendBrandCredits(this.prisma, brandId, PHOTO_TOOL_COST);
+    if (remaining === null) throw new BadRequestException(`This costs ${PHOTO_TOOL_COST} AI credits. Buy a credit pack to keep going.`);
+
+    let imageUrl: string;
+    let provider = 'unknown';
+    let engineModel = 'unknown';
+    try {
+      const result = await this.withTimeout(this.images.generate({ prompt: plan.prompt, images: [asDataUri(source)], engines: ['gemini'], aspectRatio: plan.aspectRatio }));
+      provider = result.provider;
+      engineModel = result.model;
+      imageUrl = await this.store(result.url, brandId);
+    } catch (err) {
+      await grantBrandCredits(this.prisma, brandId, PHOTO_TOOL_COST);
+      this.logger.warn(`Photo tool ${dto.tool} failed for brand ${brandId}: ${err}`);
+      throw new ServiceUnavailableException(`It could not be rendered: ${this.reason(err)} No credits were charged.`);
+    }
+
+    const shot = await this.prisma.brandModelShot.create({
+      data: {
+        brandId,
+        garmentId: garment?.id ?? null,
+        modelId: `${TOOL_PREFIX}${dto.tool}`,
+        poseId: '-',
+        backdropId: plan.backdropId,
+        framingId: plan.aspectRatio === '3:4' ? 'full' : plan.aspectRatio === '1:1' ? 'square' : 'story',
+        direction: dto.headline?.trim() || null,
+        prompt: plan.prompt,
+        sourceImageUrl,
+        imageUrl,
+        provider,
+        model: engineModel,
+        credits: PHOTO_TOOL_COST,
+      },
+    });
+    await this.trim(brandId);
+    return { shot: this.toView(shot), remainingCredits: remaining };
+  }
+
   async list(brandId: string) {
     const rows = await this.prisma.brandModelShot.findMany({
       where: { brandId },
@@ -218,7 +275,7 @@ export class BrandModelService {
       id: s.id,
       garmentId: s.garmentId,
       modelId: s.modelId,
-      modelLabel: findModel(s.modelId)?.label ?? s.modelId,
+      modelLabel: toolLabel(s.modelId) ?? findModel(s.modelId)?.label ?? s.modelId,
       poseId: s.poseId,
       poseLabel: findPose(s.poseId)?.label ?? s.poseId,
       backdropId: s.backdropId,

@@ -118,7 +118,7 @@ export class BrandBiddingService {
   /** Slots this brand has won in closed auctions, newest first. */
   async wins(brandId: string) {
     const slots = await this.prisma.bidSlot.findMany({ where: { winnerBrandId: brandId }, orderBy: { cycle: { closedAt: 'desc' } }, include: { cycle: { select: { label: true, endsAt: true } } }, take: 20 });
-    return slots.map((s) => ({ rank: s.rank, title: s.title, category: s.category, amount: s.winningAmount, period: s.cycle.label, endedAt: s.cycle.endsAt.toISOString(), paid: s.paid }));
+    return slots.map((s) => ({ id: s.id, rank: s.rank, title: s.title, category: s.category, amount: s.winningAmount, period: s.cycle.label, endedAt: s.cycle.endsAt.toISOString(), paid: s.paid }));
   }
 
   // ── Closing ─────────────────────────────────────────────────────────────

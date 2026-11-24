@@ -11,7 +11,6 @@ import { AuthModule } from "./modules/User-panel/auth/auth.module";
 import { UsersModule } from "./modules/User-panel/users/users.module";
 import { AdminModule } from "./modules/Admin-panel/admin/admin.module";
 import { ChatModule } from "./modules/User-panel/chat/chat.module";
-import { RoomsModule } from "./modules/User-panel/rooms/rooms.module";
 import { NotificationsModule } from "./modules/User-panel/notifications/notifications.module";
 import { UploadsModule } from "./modules/User-panel/uploads/uploads.module";
 import { PaymentsModule } from "./modules/User-panel/payments/payments.module";
@@ -117,7 +116,6 @@ import { BrandEventsModule } from "./shared/brand-events/brand-events.module";
     UsersModule,
     AdminModule,
     ChatModule,
-    RoomsModule,
     NotificationsModule,
     UploadsModule,
     PaymentsModule,
